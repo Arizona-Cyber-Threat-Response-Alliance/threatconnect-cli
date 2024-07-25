@@ -8,9 +8,10 @@ import time
 # Retrieve Access ID and Secret Key from environment variables
 tc_accessid = os.getenv('tc_accessid')
 tc_secretkey = os.getenv('tc_secretkey')
+instance_name=os.getenv('instance_name')
 
-print("Please provide an instance name. Example: company.threatconnect.com")
-instance_name=input("Instance name: ")
+# print("Please provide an instance name. Example: company.threatconnect.com")
+# instance_name=input("Instance name: ")
 
 # Ensure both the Access ID and Secret Key are available
 if not tc_accessid or not tc_secretkey:

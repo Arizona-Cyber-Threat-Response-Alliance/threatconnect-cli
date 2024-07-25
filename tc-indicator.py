@@ -10,6 +10,7 @@ from datetime import datetime
 import urllib.parse
 import re
 
+
 # Initialize colorama
 init(autoreset=True)
 
@@ -19,6 +20,8 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Retrieve Access ID and Secret Key from environment variables
 tc_accessid = os.getenv('tc_accessid')
 tc_secretkey = os.getenv('tc_secretkey')
+
+instance_name = os.getenv('instance_name')
 
 if not tc_accessid or not tc_secretkey:
     logging.error("Missing environment variables for Access ID or Secret Key")
@@ -37,7 +40,7 @@ ioc_patterns = {
     "asn": r"[Aa][Ss][Nn][1-4]?\d{1,8}",
     "reg_key_value": r"(?=.{1,257}$)(?:(?:HKEY_CLASSES_ROOT|HKEY_CURRENT_CONFIG|HKEY_CURRENT_USER|HKEY_CURRENT_USER_LOCAL_SETTINGS|HKEY_LOCAL_MACHINE|HKEY_PERFORMANCE_DATA|HKEY_PERFORMANCE_NLSTEXT|HKEY_PERFORMANCE_TEXT|HKEY_USERS)(?:(?!\\\\.+)(?:\\.+))*)",
     "reg_key_value2": r".{0,214}",
-    "user_agent": r"[A-Za-z0-9 /().,!""#$%&’*+-\;:<>=?@\[\]{}^_`|~]{1,256}",
+    "user_agent": r"[A-Za-z0-9 /().,!""#$%&’*+-\\;:<>=?@[]{}^_`|~]{1,256}",
     "email_subject": r".{1,100}",
 }
 
@@ -89,7 +92,7 @@ def query_indicator_with_tql(indicator_type: str, indicator: str):
             'Accept': 'application/json'
         }
         print("Please provide an instance name. Example: company.threatconnect.com")
-        instance_name=input("Instance name: ")
+        # instance_name=input("Instance name: ")
         full_url = f'https://{instance_name}.threatconnect.com{api_path}{query_string}'
         response = requests.get(full_url, headers=headers)
         response.raise_for_status()
@@ -135,8 +138,13 @@ def format_and_print_indicator_data(indicator_data):
         print("-" * 40 + "\n")
 
 def main():
-    input_string = input("Enter indicators (separated by space, line, or comma): ")
-    indicators = re.split(r'[,\n\s]+', input_string.strip())
+    print("Enter indicators (separated by line, type 'end' to stop): ")
+    indicators = []
+    while True:
+        line = input()
+        if line.strip().lower() == 'end':
+            break
+        indicators.extend(re.split(r'[,\n\s]+', line.strip()))
 
     for indicator in indicators:
         if indicator:  # Ensure the indicator is not empty
@@ -147,6 +155,5 @@ def main():
                 format_and_print_indicator_data(data['data'])
             else:
                 print(Fore.RED + "No data returned from the query or an error occurred.")
-
 if __name__ == "__main__":
     main()
