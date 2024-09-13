@@ -19,6 +19,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # Retrieve Access ID and Secret Key from environment variables
 tc_accessid = os.getenv('tc_accessid')
 tc_secretkey = os.getenv('tc_secretkey')
+tc_company = os.getenv('tc_company')
 
 if not tc_accessid or not tc_secretkey:
     logging.error("Missing environment variables for Access ID or Secret Key")
@@ -56,6 +57,7 @@ def construct_tql_query(indicator_type: str, indicator: str) -> str:
     # Map your internal indicator types to the expected ThreatConnect API types
     type_mapping = {
         "ipv4": "Address",
+        "ipv6": "Address",
         "host": "Host",
         "email_address": "EmailAddress",
         "url": "URL",
@@ -65,6 +67,7 @@ def construct_tql_query(indicator_type: str, indicator: str) -> str:
         "mutex": "Mutex",
         "registry_key": "Registry Key",
         "user_agent": "User Agent",
+        "sha-256": "File" 
         # Add other mappings as necessary
     }
     api_indicator_type = type_mapping.get(indicator_type.lower(), "Unknown")
@@ -119,7 +122,7 @@ def format_and_print_indicator_data(indicator_data):
         print(f"{Fore.RED}{Style.BRIGHT}Date Added:{Style.RESET_ALL} {date_added}")
         print(f"{Fore.RED}{Style.BRIGHT}Last Modified:{Style.RESET_ALL} {last_modified}")
         print(f"{Fore.RED}{Style.BRIGHT}Type:{Style.RESET_ALL} {indicator.get('type', 'N/A')}")
-        print(f"{Fore.RED}{Style.BRIGHT}Rating:{Style.RESET_ALL} {'💀' * int(indicator.get('rating', 0))} ({indicator.get('rating', 'N/A')}/5)")
+        print(f"{Fore.RED}{Style.BRIGHT}Rating:{Style.RESET_ALL} {'💀' * int(indicator.get('rating', 0))} ({indicator.get('rating', 'N/A')}/5.0)")
         print(f"{Fore.RED}{Style.BRIGHT}Confidence:{Style.RESET_ALL} {indicator.get('confidence', 'N/A')}%")
         print(f"{Fore.RED}{Style.BRIGHT}Owner:{Style.RESET_ALL} {indicator.get('ownerName', 'N/A')}")
         print(f"{Fore.RED}{Style.BRIGHT}Active:{Style.RESET_ALL} {'Yes' if indicator.get('active', False) else 'No'}")
@@ -135,7 +138,7 @@ def format_and_print_indicator_data(indicator_data):
         print("-" * 40 + "\n")
 
 def main():
-    input_string = input("Enter indicators (separated by space, line, or comma): ")
+    input_string = input("Enter indicators: ")
     indicators = re.split(r'[,\n\s]+', input_string.strip())
 
     for indicator in indicators:

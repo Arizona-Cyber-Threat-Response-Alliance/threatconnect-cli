@@ -4,13 +4,14 @@ import hashlib
 import base64
 import os
 import time
-
+import json
 # Retrieve Access ID and Secret Key from environment variables
 tc_accessid = os.getenv('tc_accessid')
 tc_secretkey = os.getenv('tc_secretkey')
+instance_name = os.getenv('tc_instance')
 
-print("Please provide an instance name. Example: company.threatconnect.com")
-instance_name=input("Instance name: ")
+# print("Please provide an instance name. Example: company.threatconnect.com")
+# instance_name=input("Instance name: ")
 
 # Ensure both the Access ID and Secret Key are available
 if not tc_accessid or not tc_secretkey:
@@ -52,7 +53,7 @@ def query_owners_api():
     # Check if the request was successful
     if response.status_code == 200:
         # Print the response JSON if the request was successful
-        print(response.json())
+        print(json.dumps(response.json(), indent=2))
     else:
         # Print the error if the request failed
         print(f"Error: {response.status_code} - {response.text}")
