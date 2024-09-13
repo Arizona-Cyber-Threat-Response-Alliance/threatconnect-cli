@@ -12,6 +12,8 @@ instance_name = os.getenv('tc_instance')
 
 # print("Please provide an instance name. Example: company.threatconnect.com")
 # instance_name=input("Instance name: ")
+# print("Please provide an instance name. Example: company.threatconnect.com")
+# instance_name=input("Instance name: ")
 
 # Ensure both the Access ID and Secret Key are available
 if not tc_accessid or not tc_secretkey:
