@@ -1,4 +1,4 @@
-**⚠️ NOTICE: This project is likely to become inactive as community members are now leveraging [Polarity.io](https://polarity.io) for similar functionality.**
+**⚠️ NOTICE: This project is likely to become inactive as community members are now leveraging a paid or community-licensed free edition of [Polarity.io](https://polarity.io) for similar functionality.**
 
 # ThreatConnect Indicator Query Tool
 
