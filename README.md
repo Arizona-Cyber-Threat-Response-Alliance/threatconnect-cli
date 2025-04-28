@@ -1,3 +1,5 @@
+**⚠️ NOTICE: This project is likely to become inactive as community members are now leveraging [Polarity.io](https://polarity.io) for similar functionality.**
+
 # ThreatConnect Indicator Query Tool
 
 This Python script allows users to interactively search ThreatConnect for indicator content based on various types of indicators such as IP addresses, hostnames, email addresses, and more. It utilizes the ThreatConnect API to retrieve and display information about indicators in a user-friendly format.
