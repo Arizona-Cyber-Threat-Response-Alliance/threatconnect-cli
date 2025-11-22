@@ -43,7 +43,16 @@ MOCK_GROUP_RESPONSE = {
     "status": "Open"
 }
 
-MOCK_SEARCH_RESULT = {
+MOCK_SEARCH_RESULT_RESPONSE = {
     "data": [MOCK_INDICATOR_RESPONSE],
-    "count": 1
+    "pagination": {
+        "count": 150,
+        "current_page": 1,
+        "page_size": 100,
+        "total_pages": 2,
+        "has_next": True,
+        "has_previous": False
+    },
+    "search_type": "indicators",
+    "query": "192.168.1.1"
 }

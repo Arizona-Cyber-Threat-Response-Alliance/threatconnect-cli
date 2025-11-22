@@ -113,3 +113,56 @@ def test_indicator_type_constants():
     assert IndicatorType.FILE == "File"
     assert IndicatorType.HOST == "Host"
     assert IndicatorType.URL == "URL"
+
+
+def test_indicator_with_file_hashes():
+    """Test indicator with file hash fields."""
+    data = {
+        "id": 1,
+        "type": "File",
+        "summary": "malware.exe",
+        "rating": 5.0,
+        "confidence": 100,
+        "dateAdded": "2024-01-15T14:32:10Z",
+        "lastModified": "2025-11-22T09:15:43Z",
+        "ownerName": "MyOrg",
+        "ownerId": 1,
+        "webLink": "https://example.com",
+        "md5": "d41d8cd98f00b204e9800998ecf8427e",
+        "sha1": "da39a3ee5e6b4b0d3255bfef95601890afd80709",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": 1024
+    }
+
+    indicator = Indicator(**data)
+
+    assert indicator.type == "File"
+    assert indicator.md5 == "d41d8cd98f00b204e9800998ecf8427e"
+    assert indicator.sha1 == "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+    assert indicator.sha256 == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    assert indicator.size == 1024
+
+
+def test_indicator_field_aliases():
+    """Test that field aliases work correctly."""
+    data = {
+        "id": 1,
+        "type": "Address",
+        "summary": "192.168.1.1",
+        "rating": 3.0,
+        "confidence": 85,
+        "dateAdded": "2024-01-15T14:32:10Z",  # API format
+        "lastModified": "2025-11-22T09:15:43Z",  # API format
+        "ownerName": "MyOrg",  # API format
+        "ownerId": 1,
+        "webLink": "https://example.com"
+    }
+
+    indicator = Indicator(**data)
+
+    # Should be accessible via Python snake_case names
+    assert indicator.date_added is not None
+    assert indicator.last_modified is not None
+    assert indicator.owner_name == "MyOrg"
+    assert indicator.owner_id == 1
+    assert indicator.web_link == "https://example.com"
