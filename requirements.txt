@@ -1,2 +1,10 @@
 requests
 colorama
+
+# Configuration management
+platformdirs>=4.0.0
+tomli>=2.0.0
+tomli-w>=1.0.0
+
+# Testing
+pytest>=7.0.0
