@@ -152,7 +152,7 @@ class Formatters:
         elif rating >= 1:
             style = Style(color="green")  # Low
         else:
-            style = Style(color="dim")  # No rating
+            style = Style(color="grey50", dim=True)  # No rating
 
         return Text(text, style=style)
 
