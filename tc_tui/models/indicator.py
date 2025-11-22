@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from .common import Tag, Attribute, Association
 
 

@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import List, Union, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field, ConfigDict
 from .indicator import Indicator
 from .group import Group
 
@@ -61,7 +61,7 @@ class SearchResult(BaseModel):
 
     data: List[Union[Indicator, Group]]
     pagination: PaginationInfo
-    search_type: SearchType
+    search_type: str
     query: str
 
     @property
