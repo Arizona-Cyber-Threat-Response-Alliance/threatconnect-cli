@@ -1,1 +1,1 @@
-"""Widget tests package."""
+"""Widget tests."""
