@@ -1,1 +1,1 @@
-"""Widget tests."""
+"""Tests for TUI widgets."""
