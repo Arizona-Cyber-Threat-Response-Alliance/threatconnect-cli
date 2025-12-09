@@ -28,6 +28,13 @@ pub struct Indicator {
     pub active: bool,
     pub source: Option<String>,
 
+    #[serde(rename = "falsePositiveFlag", default)]
+    pub false_positive_flag: bool,
+    #[serde(rename = "falsePositives", default)]
+    pub false_positives: i32,
+    #[serde(default)]
+    pub observations: i32,
+
     #[serde(default)]
     pub tags: Vec<Tag>,
     #[serde(default)]
