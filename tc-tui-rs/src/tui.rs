@@ -26,6 +26,7 @@ pub struct App {
     input_mode: InputMode,
     grouped_results: Vec<GroupedIndicator>,
     selected_index: usize,
+    scroll_offset: u16,
     stats: SearchStats,
     client: Arc<ThreatConnectClient>,
     status_message: String,
@@ -38,6 +39,7 @@ impl App {
             input_mode: InputMode::Normal,
             grouped_results: Vec::new(),
             selected_index: 0,
+            scroll_offset: 0,
             stats: SearchStats::default(),
             client,
             status_message: String::from("Press 'q' to quit, 'e' to enter search mode."),
@@ -66,6 +68,7 @@ impl App {
                 self.stats = calculate_stats(&indicators);
                 self.grouped_results = group_indicators(indicators);
                 self.selected_index = 0;
+                self.scroll_offset = 0;
 
                 self.status_message = format!("Found {} indicators in {} groups.", self.stats.total_count, self.grouped_results.len());
             }
@@ -74,6 +77,7 @@ impl App {
                 self.grouped_results.clear();
                 self.stats = SearchStats::default();
                 self.selected_index = 0;
+                self.scroll_offset = 0;
             }
         }
     }
@@ -87,6 +91,7 @@ impl App {
         } else {
             self.selected_index += 1;
         }
+        self.scroll_offset = 0;
     }
 
     fn previous(&mut self) {
@@ -97,6 +102,19 @@ impl App {
             self.selected_index = self.grouped_results.len() - 1; // Wrap around
         } else {
             self.selected_index -= 1;
+        }
+        self.scroll_offset = 0;
+    }
+
+    fn scroll_down(&mut self) {
+        if !self.grouped_results.is_empty() {
+            self.scroll_offset = self.scroll_offset.saturating_add(1);
+        }
+    }
+
+    fn scroll_up(&mut self) {
+        if !self.grouped_results.is_empty() {
+            self.scroll_offset = self.scroll_offset.saturating_sub(1);
         }
     }
 }
@@ -157,6 +175,12 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
                         }
                         KeyCode::Left => {
                             app_guard.previous();
+                        }
+                        KeyCode::Down => {
+                            app_guard.scroll_down();
+                        }
+                        KeyCode::Up => {
+                            app_guard.scroll_up();
                         }
                         _ => {}
                     },
@@ -260,77 +284,78 @@ fn ui(f: &mut Frame, app: &mut App) {
         let current_index = app.selected_index + 1;
         let total = app.grouped_results.len();
 
-        let card_title = format!(" Item {} of {} ", current_index, total);
+        let card_title = format!(" Item {} of {} | Use ←/→ to navigate | ↑/↓ to scroll ", current_index, total);
         let card_block = Block::default()
             .borders(Borders::ALL)
             .title(card_title)
             .border_style(Style::default().fg(Color::White));
 
         // Content of the card
-        // We show: Summary, Type, Count in group, etc.
-        // For Phase 2, we just render summary and basic info.
+        let mut content = vec![];
 
-        let mut content = vec![
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Summary: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(Color::White)),
-            ]),
-            Line::from(vec![
-                Span::styled("Type: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw(group.indicator_type.clone()),
-            ]),
-            Line::from(vec![
-                Span::styled("Group Size: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw(format!("{} record(s)", group.indicators.len())),
-            ]),
-            Line::from(""),
-            Line::from(Span::raw("─".repeat(carousel_area.width as usize - 4))),
-            Line::from(""),
-        ];
+        // Header info for the group
+        content.push(Line::from(vec![
+            Span::styled("Summary: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(Color::White)),
+        ]));
+        content.push(Line::from(vec![
+            Span::styled("Type: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::raw(group.indicator_type.clone()),
+        ]));
+        content.push(Line::from(""));
+        content.push(Line::from(Span::raw("─".repeat(carousel_area.width as usize - 4))));
 
-        // Add some details from the first indicator?
-        if let Some(first) = group.indicators.first() {
-             let rating_skulls = "💀".repeat(first.rating.round() as usize);
-             content.push(Line::from(vec![
-                Span::styled("Rating: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw(format!("{} ({:.1})", rating_skulls, first.rating)),
-            ]));
-             content.push(Line::from(vec![
-                Span::styled("Confidence: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw(format!("{}%", first.confidence)),
-            ]));
+        // List all indicators
+        for (idx, indicator) in group.indicators.iter().enumerate() {
+            if idx > 0 {
+                content.push(Line::from(""));
+                content.push(Line::from(Span::styled("- - - - -", Style::default().fg(Color::DarkGray))));
+                content.push(Line::from(""));
+            } else {
+                content.push(Line::from(""));
+            }
+
+            let rating_skulls = "💀".repeat(indicator.rating.round() as usize);
+
             content.push(Line::from(vec![
-                Span::styled("Owner: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw(first.owner_name.clone()),
+                Span::styled("Owner: ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::raw(indicator.owner_name.clone()),
             ]));
-             if group.indicators.len() > 1 {
-                 content.push(Line::from(Span::styled("(and other owners)", Style::default().fg(Color::DarkGray))));
-             }
+
+            content.push(Line::from(vec![
+                Span::styled("Rating: ", Style::default().fg(Color::Yellow)),
+                Span::raw(format!("{} ({:.1})", rating_skulls, indicator.rating)),
+                Span::raw(" | "),
+                Span::styled("Confidence: ", Style::default().fg(Color::Yellow)),
+                Span::raw(format!("{}%", indicator.confidence)),
+                Span::raw(" | "),
+                Span::styled("Active: ", Style::default().fg(Color::Yellow)),
+                Span::raw(if indicator.active { "Yes" } else { "No" }),
+            ]));
+
+            content.push(Line::from(vec![
+                Span::styled("Added: ", Style::default().fg(Color::Blue)),
+                Span::raw(indicator.date_added.format("%Y-%m-%d %H:%M").to_string()),
+                Span::raw(" | "),
+                Span::styled("Modified: ", Style::default().fg(Color::Blue)),
+                Span::raw(indicator.last_modified.format("%Y-%m-%d %H:%M").to_string()),
+            ]));
+
+            if let Some(desc) = &indicator.description {
+                if !desc.is_empty() {
+                    content.push(Line::from(Span::styled("Description:", Style::default().add_modifier(Modifier::UNDERLINED))));
+                    content.push(Line::from(desc.clone()));
+                }
+            }
         }
 
+        // Render Paragraph with scroll
         let paragraph = Paragraph::new(content)
             .block(card_block)
-            .alignment(Alignment::Center); // Or Left? Center might look cool for carousel.
+            .alignment(Alignment::Left) // Left alignment for list of details
+            .scroll((app.scroll_offset, 0));
 
-        // Visual Cues for Left/Right
-        // We can render arrows on the sides if we split the carousel area horizontally.
-        // [ < ] [ Card ] [ > ]
-        let layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(10),
-                Constraint::Length(3),
-            ])
-            .split(carousel_area);
-
-        let left_arrow = Paragraph::new("\n\n\n◄").alignment(Alignment::Center).style(Style::default().fg(Color::Yellow));
-        let right_arrow = Paragraph::new("\n\n\n►").alignment(Alignment::Center).style(Style::default().fg(Color::Yellow));
-
-        f.render_widget(left_arrow, layout[0]);
-        f.render_widget(paragraph, layout[1]);
-        f.render_widget(right_arrow, layout[2]);
+        f.render_widget(paragraph, carousel_area);
     }
 
     // --- Footer ---
@@ -338,6 +363,8 @@ fn ui(f: &mut Frame, app: &mut App) {
         Line::from(vec![
             Span::styled(" ←/→ ", Style::default().fg(Color::Yellow)),
             Span::raw("Next/Prev Group  |  "),
+            Span::styled(" ↑/↓ ", Style::default().fg(Color::Yellow)),
+            Span::raw("Scroll  |  "),
             Span::styled(" e ", Style::default().fg(Color::Yellow)),
             Span::raw("Search  |  "),
             Span::styled(" q ", Style::default().fg(Color::Yellow)),
