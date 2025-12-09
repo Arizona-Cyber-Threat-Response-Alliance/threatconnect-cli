@@ -1,5 +1,6 @@
 mod api;
 mod models;
+mod logic;
 mod tui;
 
 #[tokio::main]
