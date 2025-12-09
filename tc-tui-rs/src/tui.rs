@@ -5,16 +5,16 @@ use crossterm::{
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    layout::{Constraint, Direction, Layout, Alignment},
+    style::{Color, Style, Modifier},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, ListState},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use std::{error::Error, io, sync::Arc};
 use tokio::sync::Mutex;
 use crate::api::ThreatConnectClient;
-use crate::models::Indicator;
+use crate::logic::aggregation::{GroupedIndicator, SearchStats, group_indicators, calculate_stats};
 
 enum InputMode {
     Normal,
@@ -24,8 +24,10 @@ enum InputMode {
 pub struct App {
     input: String,
     input_mode: InputMode,
-    results: Vec<Indicator>,
-    results_state: ListState,
+    grouped_results: Vec<GroupedIndicator>,
+    selected_index: usize,
+    scroll_offset: u16,
+    stats: SearchStats,
     client: Arc<ThreatConnectClient>,
     status_message: String,
 }
@@ -35,8 +37,10 @@ impl App {
         App {
             input: String::new(),
             input_mode: InputMode::Normal,
-            results: Vec::new(),
-            results_state: ListState::default(),
+            grouped_results: Vec::new(),
+            selected_index: 0,
+            scroll_offset: 0,
+            stats: SearchStats::default(),
             client,
             status_message: String::from("Press 'q' to quit, 'e' to enter search mode."),
         }
@@ -54,50 +58,64 @@ impl App {
         let params = [
             ("tql", tql.as_str()),
             ("resultStart", "0"),
-            ("resultLimit", "100"),
+            ("resultLimit", "100"), // We might need pagination later, but 100 is ok for MVP
             ("sorting", "dateAdded ASC")
         ];
 
         match self.client.get::<crate::models::search::SearchResponse>("/indicators", Some(&params)).await {
             Ok(response) => {
-                self.results = response.data;
-                self.status_message = format!("Found {} results.", self.results.len());
-                self.results_state.select(Some(0));
+                let indicators = response.data;
+                self.stats = calculate_stats(&indicators);
+                self.grouped_results = group_indicators(indicators);
+                self.selected_index = 0;
+                self.scroll_offset = 0;
+
+                self.status_message = format!("Found {} indicators in {} groups.", self.stats.total_count, self.grouped_results.len());
             }
             Err(e) => {
                 self.status_message = format!("Search failed: {}", e);
-                self.results.clear();
-                self.results_state.select(None);
+                self.grouped_results.clear();
+                self.stats = SearchStats::default();
+                self.selected_index = 0;
+                self.scroll_offset = 0;
             }
         }
     }
 
     fn next(&mut self) {
-        let i = match self.results_state.selected() {
-            Some(i) => {
-                if i >= self.results.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.results_state.select(Some(i));
+        if self.grouped_results.is_empty() {
+            return;
+        }
+        if self.selected_index >= self.grouped_results.len() - 1 {
+            self.selected_index = 0; // Wrap around
+        } else {
+            self.selected_index += 1;
+        }
+        self.scroll_offset = 0;
     }
 
     fn previous(&mut self) {
-        let i = match self.results_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.results.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.results_state.select(Some(i));
+        if self.grouped_results.is_empty() {
+            return;
+        }
+        if self.selected_index == 0 {
+            self.selected_index = self.grouped_results.len() - 1; // Wrap around
+        } else {
+            self.selected_index -= 1;
+        }
+        self.scroll_offset = 0;
+    }
+
+    fn scroll_down(&mut self) {
+        if !self.grouped_results.is_empty() {
+            self.scroll_offset = self.scroll_offset.saturating_add(1);
+        }
+    }
+
+    fn scroll_up(&mut self) {
+        if !self.grouped_results.is_empty() {
+            self.scroll_offset = self.scroll_offset.saturating_sub(1);
+        }
     }
 }
 
@@ -141,7 +159,6 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
         let mut app_guard = app.lock().await;
         terminal.draw(|f| ui(f, &mut app_guard))?;
 
-        // Small timeout to prevent blocking everything, though usually event::read blocks
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 match app_guard.input_mode {
@@ -153,23 +170,23 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
                         KeyCode::Char('q') => {
                             return Ok(());
                         }
-                        KeyCode::Down => {
+                        KeyCode::Right => {
                             app_guard.next();
                         }
-                        KeyCode::Up => {
+                        KeyCode::Left => {
                             app_guard.previous();
+                        }
+                        KeyCode::Down => {
+                            app_guard.scroll_down();
+                        }
+                        KeyCode::Up => {
+                            app_guard.scroll_up();
                         }
                         _ => {}
                     },
                     InputMode::Editing => match key.code {
                         KeyCode::Enter => {
-                            // Trigger search
-                            drop(app_guard); // Release lock before async call
-
-                            // We need to clone the app or handle this better for async call in loop
-                            // For simplicity in this structure, we'll re-acquire lock inside perform_search logic
-                            // or just do it here if possible.
-                            // Ideally, we'd channel events. But let's try to keep it simple.
+                            drop(app_guard);
                             let mut app_guard_search = app.lock().await;
                             app_guard_search.perform_search().await;
                             app_guard_search.input_mode = InputMode::Normal;
@@ -195,16 +212,22 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
 fn ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
+        .margin(1)
         .constraints(
             [
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(3),
+                Constraint::Length(7), // Header: Search + Stats
+                Constraint::Min(10),   // Carousel
+                Constraint::Length(3), // Footer
             ]
             .as_ref(),
         )
         .split(f.area());
+
+    // --- Header ---
+    let header_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Length(4)])
+        .split(chunks[0]);
 
     let input_style = match app.input_mode {
         InputMode::Normal => Style::default(),
@@ -214,82 +237,150 @@ fn ui(f: &mut Frame, app: &mut App) {
     let input = Paragraph::new(app.input.as_str())
         .style(input_style)
         .block(Block::default().borders(Borders::ALL).title("Search Indicators"));
-    f.render_widget(input, chunks[0]);
+    f.render_widget(input, header_chunks[0]);
 
-    let items: Vec<ListItem> = app
-        .results
-        .iter()
-        .map(|i| {
-            let rating_skulls = "💀".repeat(i.rating.round() as usize);
-            let rating_str = format!("{} ({}/5.0)", rating_skulls, i.rating);
+    // Format stats
+    let avg_rating = app.stats.avg_rating.map_or("N/A".to_string(), |r| format!("{:.1}", r));
+    let avg_conf = app.stats.avg_confidence.map_or("N/A".to_string(), |c| format!("{:.1}%", c));
 
-            let content = vec![
-                Line::from(vec![
-                    Span::styled("Summary: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.summary.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Date Added: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.date_added.format("%B %d, %Y %H:%M:%S").to_string()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Last Modified: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.last_modified.format("%B %d, %Y %H:%M:%S").to_string()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Type: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.type_.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Rating: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(rating_str),
-                ]),
-                Line::from(vec![
-                    Span::styled("Confidence: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(format!("{}%", i.confidence)),
-                ]),
-                Line::from(vec![
-                    Span::styled("Owner: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.owner_name.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Active: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(if i.active { "Yes" } else { "No" }),
-                ]),
-                Line::from(vec![
-                    Span::styled("Web Link: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.web_link.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Source: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.source.clone().unwrap_or_else(|| "N/A".to_string())),
-                ]),
-                Line::from(""),
-                Line::from(Span::styled("Description:", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD))),
-                Line::from(i.description.clone().unwrap_or_else(|| "No description available.".to_string())),
-                Line::from(""),
-                Line::from(Span::raw("-".repeat(40))),
-                Line::from(""),
-            ];
-            ListItem::new(content)
-        })
-        .collect();
+    let stats_text = vec![
+        Line::from(vec![
+            Span::styled("Count: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{}   ", app.stats.total_count)),
+            Span::styled("Owners: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{}   ", app.stats.unique_owners)),
+            Span::styled("Avg Rating: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{}   ", avg_rating)),
+            Span::styled("Avg Conf: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{}", avg_conf)),
+        ]),
+        Line::from(vec![
+             Span::styled("Active: ", Style::default().add_modifier(Modifier::BOLD)),
+             Span::raw(format!("{}   ", app.stats.active_count)),
+             Span::styled("False Positives: ", Style::default().add_modifier(Modifier::BOLD)),
+             Span::raw(format!("{}   ", app.stats.false_positives)),
+        ])
+    ];
 
-    let results_list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Results"))
-        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD));
+    let stats_paragraph = Paragraph::new(stats_text)
+        .block(Block::default().borders(Borders::TOP).title("Search Stats"))
+        .style(Style::default().fg(Color::Cyan));
 
-    f.render_stateful_widget(results_list, chunks[1], &mut app.results_state);
+    f.render_widget(stats_paragraph, header_chunks[1]);
 
-    let status = Paragraph::new(app.status_message.as_str())
+
+    // --- Carousel (Main Content) ---
+
+    let carousel_area = chunks[1];
+    let block = Block::default().borders(Borders::ALL).title("Indicator Results");
+
+    if app.grouped_results.is_empty() {
+        let text = Paragraph::new("No results found. Press 'e' to search.")
+            .alignment(Alignment::Center)
+            .block(block);
+        f.render_widget(text, carousel_area);
+    } else {
+        let group = &app.grouped_results[app.selected_index];
+        let current_index = app.selected_index + 1;
+        let total = app.grouped_results.len();
+
+        let card_title = format!(" Item {} of {} | Use ←/→ to navigate | ↑/↓ to scroll ", current_index, total);
+        let card_block = Block::default()
+            .borders(Borders::ALL)
+            .title(card_title)
+            .border_style(Style::default().fg(Color::White));
+
+        // Content of the card
+        let mut content = vec![];
+
+        // Header info for the group
+        content.push(Line::from(vec![
+            Span::styled("Summary: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(Color::White)),
+        ]));
+        content.push(Line::from(vec![
+            Span::styled("Type: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::raw(group.indicator_type.clone()),
+        ]));
+        content.push(Line::from(""));
+        content.push(Line::from(Span::raw("─".repeat(carousel_area.width as usize - 4))));
+
+        // List all indicators
+        for (idx, indicator) in group.indicators.iter().enumerate() {
+            if idx > 0 {
+                content.push(Line::from(""));
+                content.push(Line::from(Span::styled("- - - - -", Style::default().fg(Color::DarkGray))));
+                content.push(Line::from(""));
+            } else {
+                content.push(Line::from(""));
+            }
+
+            let rating_skulls = "💀".repeat(indicator.rating.round() as usize);
+
+            content.push(Line::from(vec![
+                Span::styled("Owner: ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::raw(indicator.owner_name.clone()),
+            ]));
+
+            content.push(Line::from(vec![
+                Span::styled("Rating: ", Style::default().fg(Color::Yellow)),
+                Span::raw(format!("{} ({:.1})", rating_skulls, indicator.rating)),
+                Span::raw(" | "),
+                Span::styled("Confidence: ", Style::default().fg(Color::Yellow)),
+                Span::raw(format!("{}%", indicator.confidence)),
+                Span::raw(" | "),
+                Span::styled("Active: ", Style::default().fg(Color::Yellow)),
+                Span::raw(if indicator.active { "Yes" } else { "No" }),
+            ]));
+
+            content.push(Line::from(vec![
+                Span::styled("Added: ", Style::default().fg(Color::Blue)),
+                Span::raw(indicator.date_added.format("%Y-%m-%d %H:%M").to_string()),
+                Span::raw(" | "),
+                Span::styled("Modified: ", Style::default().fg(Color::Blue)),
+                Span::raw(indicator.last_modified.format("%Y-%m-%d %H:%M").to_string()),
+            ]));
+
+            if let Some(desc) = &indicator.description {
+                if !desc.is_empty() {
+                    content.push(Line::from(Span::styled("Description:", Style::default().add_modifier(Modifier::UNDERLINED))));
+                    content.push(Line::from(desc.clone()));
+                }
+            }
+        }
+
+        // Render Paragraph with scroll
+        let paragraph = Paragraph::new(content)
+            .block(card_block)
+            .alignment(Alignment::Left) // Left alignment for list of details
+            .scroll((app.scroll_offset, 0));
+
+        f.render_widget(paragraph, carousel_area);
+    }
+
+    // --- Footer ---
+    let footer_text = vec![
+        Line::from(vec![
+            Span::styled(" ←/→ ", Style::default().fg(Color::Yellow)),
+            Span::raw("Next/Prev Group  |  "),
+            Span::styled(" ↑/↓ ", Style::default().fg(Color::Yellow)),
+            Span::raw("Scroll  |  "),
+            Span::styled(" e ", Style::default().fg(Color::Yellow)),
+            Span::raw("Search  |  "),
+            Span::styled(" q ", Style::default().fg(Color::Yellow)),
+            Span::raw("Quit"),
+        ]),
+        Line::from(app.status_message.clone()),
+    ];
+    let footer = Paragraph::new(footer_text)
         .block(Block::default().borders(Borders::ALL).title("Status"));
-    f.render_widget(status, chunks[2]);
+    f.render_widget(footer, chunks[2]);
 
-    // Set cursor if editing
+    // Set cursor
     if let InputMode::Editing = app.input_mode {
         f.set_cursor_position(ratatui::layout::Position::new(
-            chunks[0].x + app.input.len() as u16 + 1,
-            chunks[0].y + 1,
+            header_chunks[0].x + app.input.len() as u16 + 1,
+            header_chunks[0].y + 1,
         ))
     }
 }
