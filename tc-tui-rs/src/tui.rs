@@ -277,7 +277,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     let results_list = List::new(items)
         .block(Block::default().borders(Borders::ALL).title("Results"))
-        .highlight_style(Style::default().add_modifier(ratatui::style::Modifier::REVERSED));
+        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD));
 
     f.render_stateful_widget(results_list, chunks[1], &mut app.results_state);
 
