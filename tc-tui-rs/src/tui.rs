@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, ListState},
     Frame, Terminal,
 };
 use std::{error::Error, io, sync::Arc};
@@ -25,6 +25,7 @@ pub struct App {
     input: String,
     input_mode: InputMode,
     results: Vec<Indicator>,
+    results_state: ListState,
     client: Arc<ThreatConnectClient>,
     status_message: String,
 }
@@ -35,6 +36,7 @@ impl App {
             input: String::new(),
             input_mode: InputMode::Normal,
             results: Vec::new(),
+            results_state: ListState::default(),
             client,
             status_message: String::from("Press 'q' to quit, 'e' to enter search mode."),
         }
@@ -60,12 +62,42 @@ impl App {
             Ok(response) => {
                 self.results = response.data;
                 self.status_message = format!("Found {} results.", self.results.len());
+                self.results_state.select(Some(0));
             }
             Err(e) => {
                 self.status_message = format!("Search failed: {}", e);
                 self.results.clear();
+                self.results_state.select(None);
             }
         }
+    }
+
+    fn next(&mut self) {
+        let i = match self.results_state.selected() {
+            Some(i) => {
+                if i >= self.results.len() - 1 {
+                    0
+                } else {
+                    i + 1
+                }
+            }
+            None => 0,
+        };
+        self.results_state.select(Some(i));
+    }
+
+    fn previous(&mut self) {
+        let i = match self.results_state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    self.results.len() - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.results_state.select(Some(i));
     }
 }
 
@@ -107,7 +139,7 @@ pub async fn run_app() -> Result<(), Box<dyn Error>> {
 async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) -> io::Result<()> {
     loop {
         let mut app_guard = app.lock().await;
-        terminal.draw(|f| ui(f, &app_guard))?;
+        terminal.draw(|f| ui(f, &mut app_guard))?;
 
         // Small timeout to prevent blocking everything, though usually event::read blocks
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
@@ -120,6 +152,12 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
                         }
                         KeyCode::Char('q') => {
                             return Ok(());
+                        }
+                        KeyCode::Down => {
+                            app_guard.next();
+                        }
+                        KeyCode::Up => {
+                            app_guard.previous();
                         }
                         _ => {}
                     },
@@ -154,7 +192,7 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
     }
 }
 
-fn ui(f: &mut Frame, app: &App) {
+fn ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -182,14 +220,66 @@ fn ui(f: &mut Frame, app: &App) {
         .results
         .iter()
         .map(|i| {
-            let content = vec![Line::from(Span::raw(format!("{} - {}", i.summary, i.type_)))];
+            let rating_skulls = "💀".repeat(i.rating.round() as usize);
+            let rating_str = format!("{} ({}/5.0)", rating_skulls, i.rating);
+
+            let content = vec![
+                Line::from(vec![
+                    Span::styled("Summary: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(i.summary.clone()),
+                ]),
+                Line::from(vec![
+                    Span::styled("Date Added: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(i.date_added.format("%B %d, %Y %H:%M:%S").to_string()),
+                ]),
+                Line::from(vec![
+                    Span::styled("Last Modified: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(i.last_modified.format("%B %d, %Y %H:%M:%S").to_string()),
+                ]),
+                Line::from(vec![
+                    Span::styled("Type: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(i.type_.clone()),
+                ]),
+                Line::from(vec![
+                    Span::styled("Rating: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(rating_str),
+                ]),
+                Line::from(vec![
+                    Span::styled("Confidence: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(format!("{}%", i.confidence)),
+                ]),
+                Line::from(vec![
+                    Span::styled("Owner: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(i.owner_name.clone()),
+                ]),
+                Line::from(vec![
+                    Span::styled("Active: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(if i.active { "Yes" } else { "No" }),
+                ]),
+                Line::from(vec![
+                    Span::styled("Web Link: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(i.web_link.clone()),
+                ]),
+                Line::from(vec![
+                    Span::styled("Source: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
+                    Span::raw(i.source.clone().unwrap_or_else(|| "N/A".to_string())),
+                ]),
+                Line::from(""),
+                Line::from(Span::styled("Description:", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD))),
+                Line::from(i.description.clone().unwrap_or_else(|| "No description available.".to_string())),
+                Line::from(""),
+                Line::from(Span::raw("-".repeat(40))),
+                Line::from(""),
+            ];
             ListItem::new(content)
         })
         .collect();
 
     let results_list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Results"));
-    f.render_widget(results_list, chunks[1]);
+        .block(Block::default().borders(Borders::ALL).title("Results"))
+        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD));
+
+    f.render_stateful_widget(results_list, chunks[1], &mut app.results_state);
 
     let status = Paragraph::new(app.status_message.as_str())
         .block(Block::default().borders(Borders::ALL).title("Status"));
