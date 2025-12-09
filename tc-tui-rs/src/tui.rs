@@ -5,16 +5,16 @@ use crossterm::{
 };
 use ratatui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
+    layout::{Constraint, Direction, Layout, Alignment},
+    style::{Color, Style, Modifier},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, ListState},
+    widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 use std::{error::Error, io, sync::Arc};
 use tokio::sync::Mutex;
 use crate::api::ThreatConnectClient;
-use crate::models::Indicator;
+use crate::logic::aggregation::{GroupedIndicator, SearchStats, group_indicators, calculate_stats};
 
 enum InputMode {
     Normal,
@@ -24,8 +24,9 @@ enum InputMode {
 pub struct App {
     input: String,
     input_mode: InputMode,
-    results: Vec<Indicator>,
-    results_state: ListState,
+    grouped_results: Vec<GroupedIndicator>,
+    selected_index: usize,
+    stats: SearchStats,
     client: Arc<ThreatConnectClient>,
     status_message: String,
 }
@@ -35,8 +36,9 @@ impl App {
         App {
             input: String::new(),
             input_mode: InputMode::Normal,
-            results: Vec::new(),
-            results_state: ListState::default(),
+            grouped_results: Vec::new(),
+            selected_index: 0,
+            stats: SearchStats::default(),
             client,
             status_message: String::from("Press 'q' to quit, 'e' to enter search mode."),
         }
@@ -54,50 +56,48 @@ impl App {
         let params = [
             ("tql", tql.as_str()),
             ("resultStart", "0"),
-            ("resultLimit", "100"),
+            ("resultLimit", "100"), // We might need pagination later, but 100 is ok for MVP
             ("sorting", "dateAdded ASC")
         ];
 
         match self.client.get::<crate::models::search::SearchResponse>("/indicators", Some(&params)).await {
             Ok(response) => {
-                self.results = response.data;
-                self.status_message = format!("Found {} results.", self.results.len());
-                self.results_state.select(Some(0));
+                let indicators = response.data;
+                self.stats = calculate_stats(&indicators);
+                self.grouped_results = group_indicators(indicators);
+                self.selected_index = 0;
+
+                self.status_message = format!("Found {} indicators in {} groups.", self.stats.total_count, self.grouped_results.len());
             }
             Err(e) => {
                 self.status_message = format!("Search failed: {}", e);
-                self.results.clear();
-                self.results_state.select(None);
+                self.grouped_results.clear();
+                self.stats = SearchStats::default();
+                self.selected_index = 0;
             }
         }
     }
 
     fn next(&mut self) {
-        let i = match self.results_state.selected() {
-            Some(i) => {
-                if i >= self.results.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.results_state.select(Some(i));
+        if self.grouped_results.is_empty() {
+            return;
+        }
+        if self.selected_index >= self.grouped_results.len() - 1 {
+            self.selected_index = 0; // Wrap around
+        } else {
+            self.selected_index += 1;
+        }
     }
 
     fn previous(&mut self) {
-        let i = match self.results_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.results.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.results_state.select(Some(i));
+        if self.grouped_results.is_empty() {
+            return;
+        }
+        if self.selected_index == 0 {
+            self.selected_index = self.grouped_results.len() - 1; // Wrap around
+        } else {
+            self.selected_index -= 1;
+        }
     }
 }
 
@@ -141,7 +141,6 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
         let mut app_guard = app.lock().await;
         terminal.draw(|f| ui(f, &mut app_guard))?;
 
-        // Small timeout to prevent blocking everything, though usually event::read blocks
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 match app_guard.input_mode {
@@ -153,23 +152,17 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
                         KeyCode::Char('q') => {
                             return Ok(());
                         }
-                        KeyCode::Down => {
+                        KeyCode::Right => {
                             app_guard.next();
                         }
-                        KeyCode::Up => {
+                        KeyCode::Left => {
                             app_guard.previous();
                         }
                         _ => {}
                     },
                     InputMode::Editing => match key.code {
                         KeyCode::Enter => {
-                            // Trigger search
-                            drop(app_guard); // Release lock before async call
-
-                            // We need to clone the app or handle this better for async call in loop
-                            // For simplicity in this structure, we'll re-acquire lock inside perform_search logic
-                            // or just do it here if possible.
-                            // Ideally, we'd channel events. But let's try to keep it simple.
+                            drop(app_guard);
                             let mut app_guard_search = app.lock().await;
                             app_guard_search.perform_search().await;
                             app_guard_search.input_mode = InputMode::Normal;
@@ -195,16 +188,22 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
 fn ui(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
+        .margin(1)
         .constraints(
             [
-                Constraint::Length(3),
-                Constraint::Min(1),
-                Constraint::Length(3),
+                Constraint::Length(7), // Header: Search + Stats
+                Constraint::Min(10),   // Carousel
+                Constraint::Length(3), // Footer
             ]
             .as_ref(),
         )
         .split(f.area());
+
+    // --- Header ---
+    let header_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Length(4)])
+        .split(chunks[0]);
 
     let input_style = match app.input_mode {
         InputMode::Normal => Style::default(),
@@ -214,82 +213,147 @@ fn ui(f: &mut Frame, app: &mut App) {
     let input = Paragraph::new(app.input.as_str())
         .style(input_style)
         .block(Block::default().borders(Borders::ALL).title("Search Indicators"));
-    f.render_widget(input, chunks[0]);
+    f.render_widget(input, header_chunks[0]);
 
-    let items: Vec<ListItem> = app
-        .results
-        .iter()
-        .map(|i| {
-            let rating_skulls = "💀".repeat(i.rating.round() as usize);
-            let rating_str = format!("{} ({}/5.0)", rating_skulls, i.rating);
+    // Format stats
+    let avg_rating = app.stats.avg_rating.map_or("N/A".to_string(), |r| format!("{:.1}", r));
+    let avg_conf = app.stats.avg_confidence.map_or("N/A".to_string(), |c| format!("{:.1}%", c));
 
-            let content = vec![
-                Line::from(vec![
-                    Span::styled("Summary: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.summary.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Date Added: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.date_added.format("%B %d, %Y %H:%M:%S").to_string()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Last Modified: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.last_modified.format("%B %d, %Y %H:%M:%S").to_string()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Type: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.type_.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Rating: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(rating_str),
-                ]),
-                Line::from(vec![
-                    Span::styled("Confidence: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(format!("{}%", i.confidence)),
-                ]),
-                Line::from(vec![
-                    Span::styled("Owner: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.owner_name.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Active: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(if i.active { "Yes" } else { "No" }),
-                ]),
-                Line::from(vec![
-                    Span::styled("Web Link: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.web_link.clone()),
-                ]),
-                Line::from(vec![
-                    Span::styled("Source: ", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD)),
-                    Span::raw(i.source.clone().unwrap_or_else(|| "N/A".to_string())),
-                ]),
-                Line::from(""),
-                Line::from(Span::styled("Description:", Style::default().fg(Color::Red).add_modifier(ratatui::style::Modifier::BOLD))),
-                Line::from(i.description.clone().unwrap_or_else(|| "No description available.".to_string())),
-                Line::from(""),
-                Line::from(Span::raw("-".repeat(40))),
-                Line::from(""),
-            ];
-            ListItem::new(content)
-        })
-        .collect();
+    let stats_text = vec![
+        Line::from(vec![
+            Span::styled("Count: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{}   ", app.stats.total_count)),
+            Span::styled("Owners: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{}   ", app.stats.unique_owners)),
+            Span::styled("Avg Rating: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{}   ", avg_rating)),
+            Span::styled("Avg Conf: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(format!("{}", avg_conf)),
+        ]),
+        Line::from(vec![
+             Span::styled("Active: ", Style::default().add_modifier(Modifier::BOLD)),
+             Span::raw(format!("{}   ", app.stats.active_count)),
+             Span::styled("False Positives: ", Style::default().add_modifier(Modifier::BOLD)),
+             Span::raw(format!("{}   ", app.stats.false_positives)),
+        ])
+    ];
 
-    let results_list = List::new(items)
-        .block(Block::default().borders(Borders::ALL).title("Results"))
-        .highlight_style(Style::default().fg(Color::Yellow).add_modifier(ratatui::style::Modifier::BOLD));
+    let stats_paragraph = Paragraph::new(stats_text)
+        .block(Block::default().borders(Borders::TOP).title("Search Stats"))
+        .style(Style::default().fg(Color::Cyan));
 
-    f.render_stateful_widget(results_list, chunks[1], &mut app.results_state);
+    f.render_widget(stats_paragraph, header_chunks[1]);
 
-    let status = Paragraph::new(app.status_message.as_str())
+
+    // --- Carousel (Main Content) ---
+
+    let carousel_area = chunks[1];
+    let block = Block::default().borders(Borders::ALL).title("Indicator Results");
+
+    if app.grouped_results.is_empty() {
+        let text = Paragraph::new("No results found. Press 'e' to search.")
+            .alignment(Alignment::Center)
+            .block(block);
+        f.render_widget(text, carousel_area);
+    } else {
+        let group = &app.grouped_results[app.selected_index];
+        let current_index = app.selected_index + 1;
+        let total = app.grouped_results.len();
+
+        let card_title = format!(" Item {} of {} ", current_index, total);
+        let card_block = Block::default()
+            .borders(Borders::ALL)
+            .title(card_title)
+            .border_style(Style::default().fg(Color::White));
+
+        // Content of the card
+        // We show: Summary, Type, Count in group, etc.
+        // For Phase 2, we just render summary and basic info.
+
+        let mut content = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Summary: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(Color::White)),
+            ]),
+            Line::from(vec![
+                Span::styled("Type: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw(group.indicator_type.clone()),
+            ]),
+            Line::from(vec![
+                Span::styled("Group Size: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw(format!("{} record(s)", group.indicators.len())),
+            ]),
+            Line::from(""),
+            Line::from(Span::raw("─".repeat(carousel_area.width as usize - 4))),
+            Line::from(""),
+        ];
+
+        // Add some details from the first indicator?
+        if let Some(first) = group.indicators.first() {
+             let rating_skulls = "💀".repeat(first.rating.round() as usize);
+             content.push(Line::from(vec![
+                Span::styled("Rating: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw(format!("{} ({:.1})", rating_skulls, first.rating)),
+            ]));
+             content.push(Line::from(vec![
+                Span::styled("Confidence: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw(format!("{}%", first.confidence)),
+            ]));
+            content.push(Line::from(vec![
+                Span::styled("Owner: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw(first.owner_name.clone()),
+            ]));
+             if group.indicators.len() > 1 {
+                 content.push(Line::from(Span::styled("(and other owners)", Style::default().fg(Color::DarkGray))));
+             }
+        }
+
+        let paragraph = Paragraph::new(content)
+            .block(card_block)
+            .alignment(Alignment::Center); // Or Left? Center might look cool for carousel.
+
+        // Visual Cues for Left/Right
+        // We can render arrows on the sides if we split the carousel area horizontally.
+        // [ < ] [ Card ] [ > ]
+        let layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(10),
+                Constraint::Length(3),
+            ])
+            .split(carousel_area);
+
+        let left_arrow = Paragraph::new("\n\n\n◄").alignment(Alignment::Center).style(Style::default().fg(Color::Yellow));
+        let right_arrow = Paragraph::new("\n\n\n►").alignment(Alignment::Center).style(Style::default().fg(Color::Yellow));
+
+        f.render_widget(left_arrow, layout[0]);
+        f.render_widget(paragraph, layout[1]);
+        f.render_widget(right_arrow, layout[2]);
+    }
+
+    // --- Footer ---
+    let footer_text = vec![
+        Line::from(vec![
+            Span::styled(" ←/→ ", Style::default().fg(Color::Yellow)),
+            Span::raw("Next/Prev Group  |  "),
+            Span::styled(" e ", Style::default().fg(Color::Yellow)),
+            Span::raw("Search  |  "),
+            Span::styled(" q ", Style::default().fg(Color::Yellow)),
+            Span::raw("Quit"),
+        ]),
+        Line::from(app.status_message.clone()),
+    ];
+    let footer = Paragraph::new(footer_text)
         .block(Block::default().borders(Borders::ALL).title("Status"));
-    f.render_widget(status, chunks[2]);
+    f.render_widget(footer, chunks[2]);
 
-    // Set cursor if editing
+    // Set cursor
     if let InputMode::Editing = app.input_mode {
         f.set_cursor_position(ratatui::layout::Position::new(
-            chunks[0].x + app.input.len() as u16 + 1,
-            chunks[0].y + 1,
+            header_chunks[0].x + app.input.len() as u16 + 1,
+            header_chunks[0].y + 1,
         ))
     }
 }
