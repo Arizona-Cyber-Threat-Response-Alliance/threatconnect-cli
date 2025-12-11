@@ -530,9 +530,7 @@ fn ui(f: &mut Frame, app: &mut App) {
             Span::styled(" e ", Style::default().fg(app.theme.title_main)),
             Span::styled("Search  |  ", Style::default().fg(app.theme.text)),
             Span::styled(" q ", Style::default().fg(app.theme.title_main)),
-            Span::styled("Quit  |  ", Style::default().fg(app.theme.text)),
-            Span::styled(" t ", Style::default().fg(app.theme.title_main)),
-            Span::styled("Theme", Style::default().fg(app.theme.text)),
+            Span::styled("Quit", Style::default().fg(app.theme.text)),
         ]),
         Line::from(Span::styled(app.status_message.clone(), Style::default().fg(app.theme.text))),
     ];
