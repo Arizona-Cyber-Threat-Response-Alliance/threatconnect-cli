@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Alignment},
     style::{Color, Style, Modifier},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Padding, BorderType},
     Frame, Terminal,
 };
 use std::{error::Error, io, sync::Arc};
@@ -210,6 +210,15 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
+    // Colors
+    const TC_ORANGE: Color = Color::Rgb(255, 122, 79);
+    const TC_VERY_DARK_ORANGE: Color = Color::Rgb(163, 76, 0);   // #a34c00
+    const TC_DARK_ORANGE: Color = Color::Rgb(254, 124, 80);      // #fe7c50 (Using user's "dark orange" name, though sim to TC_ORANGE)
+    const TC_LIGHT_ORANGE: Color = Color::Rgb(250, 198, 148);    // #fac694
+    const TC_LIGHT_BLUE: Color = Color::Rgb(179, 209, 247);      // #b3d1f7
+    const TC_DARK_BLUE: Color = Color::Rgb(51, 93, 127);         // #335d7f
+    const TC_WHITE: Color = Color::White;
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -230,13 +239,20 @@ fn ui(f: &mut Frame, app: &mut App) {
         .split(chunks[0]);
 
     let input_style = match app.input_mode {
-        InputMode::Normal => Style::default(),
-        InputMode::Editing => Style::default().fg(Color::Yellow),
+        InputMode::Normal => Style::default().fg(TC_WHITE),
+        InputMode::Editing => Style::default().fg(TC_ORANGE),
     };
 
-    let input = Paragraph::new(app.input.as_str())
+    let input = Paragraph::new(format!("> {}", app.input.as_str()))
         .style(input_style)
-        .block(Block::default().borders(Borders::ALL).title("Search Indicators"));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Search Indicators")
+                .border_style(Style::default().fg(TC_ORANGE))
+                .padding(Padding::horizontal(4)),
+        );
     f.render_widget(input, header_chunks[0]);
 
     // Format stats
@@ -245,34 +261,44 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     let stats_text = vec![
         Line::from(vec![
-            Span::styled("Count: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("Count: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
             Span::raw(format!("{}   ", app.stats.total_count)),
-            Span::styled("Owners: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("Owners: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
             Span::raw(format!("{}   ", app.stats.unique_owners)),
-            Span::styled("Avg Rating: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("Avg Evilness: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
             Span::raw(format!("{}   ", avg_rating)),
-            Span::styled("Avg Conf: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("Avg Conf: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
             Span::raw(format!("{}", avg_conf)),
         ]),
         Line::from(vec![
-             Span::styled("Active: ", Style::default().add_modifier(Modifier::BOLD)),
-             Span::raw(format!("{}   ", app.stats.active_count)),
-             Span::styled("False Positives: ", Style::default().add_modifier(Modifier::BOLD)),
-             Span::raw(format!("{}   ", app.stats.false_positives)),
-        ])
+            Span::styled("Active: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
+            Span::raw(format!("{}   ", app.stats.active_count)),
+            Span::styled("False Positives: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
+            Span::raw(format!("{}   ", app.stats.false_positives)),
+        ]),
     ];
 
     let stats_paragraph = Paragraph::new(stats_text)
-        .block(Block::default().borders(Borders::TOP).title("Search Stats"))
-        .style(Style::default().fg(Color::Cyan));
+        .block(
+            Block::default()
+                .borders(Borders::TOP)
+                .title("Search Stats")
+                .border_style(Style::default().fg(TC_ORANGE))
+                .padding(Padding::horizontal(4)),
+        )
+        .style(Style::default().fg(TC_WHITE));
 
     f.render_widget(stats_paragraph, header_chunks[1]);
-
 
     // --- Carousel (Main Content) ---
 
     let carousel_area = chunks[1];
-    let block = Block::default().borders(Borders::ALL).title("Indicator Results");
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title("Indicator Results")
+        .border_style(Style::default().fg(TC_ORANGE))
+        .padding(Padding::new(4, 4, 1, 0)); // Top padding 1
 
     if app.grouped_results.is_empty() {
         let text = Paragraph::new("No results found. Press 'e' to search.")
@@ -284,26 +310,29 @@ fn ui(f: &mut Frame, app: &mut App) {
         let current_index = app.selected_index + 1;
         let total = app.grouped_results.len();
 
-        let card_title = format!(" Item {} of {} | Use ←/→ to navigate | ↑/↓ to scroll ", current_index, total);
+        let card_title = format!(" Item {} of {} ", current_index, total);
         let card_block = Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .title(card_title)
-            .border_style(Style::default().fg(Color::White));
+            .border_style(Style::default().fg(TC_ORANGE))
+            .padding(Padding::new(4, 4, 1, 0)); // Top padding 1
 
         // Content of the card
         let mut content = vec![];
 
         // Header info for the group
         content.push(Line::from(vec![
-            Span::styled("Summary: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-            Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(Color::White)),
+            Span::styled("Summary: ", Style::default().fg(TC_DARK_ORANGE).add_modifier(Modifier::BOLD)),
+            Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(TC_WHITE)),
         ]));
         content.push(Line::from(vec![
-            Span::styled("Type: ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled("Type: ", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD)),
             Span::raw(group.indicator_type.clone()),
         ]));
-        content.push(Line::from(""));
-        content.push(Line::from(Span::raw("─".repeat(carousel_area.width as usize - 4))));
+        // Removed empty line before divider
+        let divider_len = carousel_area.width.saturating_sub(10) as usize; // width - borders(2) - padding(8)
+        content.push(Line::from(Span::raw("─".repeat(divider_len))));
 
         // List all indicators
         for (idx, indicator) in group.indicators.iter().enumerate() {
@@ -317,28 +346,51 @@ fn ui(f: &mut Frame, app: &mut App) {
 
             let rating_skulls = "💀".repeat(indicator.rating.round() as usize);
 
-            content.push(Line::from(vec![
-                Span::styled("Owner: ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
-                Span::raw(indicator.owner_name.clone()),
-            ]));
+            // Layout:
+            // Owner: ... | Active: ...
+            // Added: ... | Modified: ...
+            // Evilness: ...
+            // Confidence: ... [---    ]
 
+            // Line 1
             content.push(Line::from(vec![
-                Span::styled("Rating: ", Style::default().fg(Color::Yellow)),
-                Span::raw(format!("{} ({:.1})", rating_skulls, indicator.rating)),
+                Span::styled("Owner: ", Style::default().fg(TC_DARK_BLUE).add_modifier(Modifier::BOLD)),
+                Span::raw(indicator.owner_name.clone()),
                 Span::raw(" | "),
-                Span::styled("Confidence: ", Style::default().fg(Color::Yellow)),
-                Span::raw(format!("{}%", indicator.confidence)),
-                Span::raw(" | "),
-                Span::styled("Active: ", Style::default().fg(Color::Yellow)),
+                Span::styled("Active: ", Style::default().fg(TC_ORANGE).add_modifier(Modifier::BOLD)),
                 Span::raw(if indicator.active { "Yes" } else { "No" }),
             ]));
 
+            // Line 2
             content.push(Line::from(vec![
-                Span::styled("Added: ", Style::default().fg(Color::Blue)),
+                Span::styled("Added: ", Style::default().fg(TC_LIGHT_BLUE)),
                 Span::raw(indicator.date_added.format("%Y-%m-%d %H:%M").to_string()),
                 Span::raw(" | "),
-                Span::styled("Modified: ", Style::default().fg(Color::Blue)),
+                Span::styled("Modified: ", Style::default().fg(TC_LIGHT_BLUE)),
                 Span::raw(indicator.last_modified.format("%Y-%m-%d %H:%M").to_string()),
+            ]));
+
+            // Line 3: Evilness
+            content.push(Line::from(vec![
+                Span::styled("Evilness: ", Style::default().fg(TC_VERY_DARK_ORANGE)),
+                Span::raw(format!("{} ({:.1})", rating_skulls, indicator.rating)),
+            ]));
+
+            // Line 4: Confidence Bar
+            let conf_val = indicator.confidence as u32; // 0-100
+            let filled_count = (conf_val as f32 / 10.0).round() as usize;
+            let filled_count = filled_count.clamp(0, 10);
+            let empty_count = 10 - filled_count;
+
+            let filled_bar = "-".repeat(filled_count);
+            let empty_bar = "-".repeat(empty_count);
+
+            content.push(Line::from(vec![
+                Span::styled("Confidence: ", Style::default().fg(TC_ORANGE)),
+                Span::raw(format!("{}% [", conf_val)),
+                Span::styled(filled_bar, Style::default().fg(TC_ORANGE)),
+                Span::styled(empty_bar, Style::default().fg(TC_WHITE)),
+                Span::raw("]"),
             ]));
 
             if let Some(desc) = &indicator.description {
@@ -352,7 +404,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         // Render Paragraph with scroll
         let paragraph = Paragraph::new(content)
             .block(card_block)
-            .alignment(Alignment::Left) // Left alignment for list of details
+            .alignment(Alignment::Left)
             .scroll((app.scroll_offset, 0));
 
         f.render_widget(paragraph, carousel_area);
@@ -361,25 +413,33 @@ fn ui(f: &mut Frame, app: &mut App) {
     // --- Footer ---
     let footer_text = vec![
         Line::from(vec![
-            Span::styled(" ←/→ ", Style::default().fg(Color::Yellow)),
+            Span::styled(" ←/→ ", Style::default().fg(TC_ORANGE)),
             Span::raw("Next/Prev Group  |  "),
-            Span::styled(" ↑/↓ ", Style::default().fg(Color::Yellow)),
+            Span::styled(" ↑/↓ ", Style::default().fg(TC_ORANGE)),
             Span::raw("Scroll  |  "),
-            Span::styled(" e ", Style::default().fg(Color::Yellow)),
+            Span::styled(" e ", Style::default().fg(TC_ORANGE)),
             Span::raw("Search  |  "),
-            Span::styled(" q ", Style::default().fg(Color::Yellow)),
+            Span::styled(" q ", Style::default().fg(TC_ORANGE)),
             Span::raw("Quit"),
         ]),
         Line::from(app.status_message.clone()),
     ];
     let footer = Paragraph::new(footer_text)
-        .block(Block::default().borders(Borders::ALL).title("Status"));
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Navigation")
+                .border_style(Style::default().fg(TC_ORANGE))
+                .padding(Padding::horizontal(4)),
+        );
     f.render_widget(footer, chunks[2]);
 
     // Set cursor
     if let InputMode::Editing = app.input_mode {
+        // x = rect.x + border(1) + padding(4) + "> " (2) + input_len
         f.set_cursor_position(ratatui::layout::Position::new(
-            header_chunks[0].x + app.input.len() as u16 + 1,
+            header_chunks[0].x + 1 + 4 + 2 + app.input.len() as u16,
             header_chunks[0].y + 1,
         ))
     }
