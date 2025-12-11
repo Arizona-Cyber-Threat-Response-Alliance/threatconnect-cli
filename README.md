@@ -78,7 +78,3 @@ The project is structured as a standard Rust binary crate.
 ## Legacy Python Tool
 
 The previous Python-based CLI tool has been moved to the `legacy/` directory.
-
-## License
-
-[License Information]
