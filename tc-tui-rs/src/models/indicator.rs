@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
-use super::common::{Tag, Attribute, Association};
+use super::common::{Tag, Attribute, Association, ListResponse};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Indicator {
@@ -36,15 +36,15 @@ pub struct Indicator {
     pub observations: i32,
 
     #[serde(default)]
-    pub tags: Vec<Tag>,
+    pub tags: ListResponse<Tag>,
     #[serde(default)]
-    pub attributes: Vec<Attribute>,
+    pub attributes: ListResponse<Attribute>,
 
     // Using rename to map from associatedGroups/associatedIndicators
     #[serde(rename = "associatedGroups", default)]
-    pub associated_groups: Vec<Association>,
+    pub associated_groups: ListResponse<Association>,
     #[serde(rename = "associatedIndicators", default)]
-    pub associated_indicators: Vec<Association>,
+    pub associated_indicators: ListResponse<Association>,
 }
 
 fn default_active() -> bool {
