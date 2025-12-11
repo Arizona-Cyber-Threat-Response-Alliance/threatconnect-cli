@@ -1,3 +1,13 @@
+# ⚠️ Project Moved
+
+This repository has been archived. The project has moved to a new home:
+
+**[https://github.com/Arizona-Cyber-Threat-Response-Alliance/threatconnect-tui](https://github.com/Arizona-Cyber-Threat-Response-Alliance/threatconnect-tui)**
+
+Please update your remotes and visit the new repository for the latest updates and contributions.
+
+---
+
 # ThreatConnect TUI
 
 ![ThreatConnect TUI](new_tui_tc.png)
