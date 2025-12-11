@@ -59,7 +59,8 @@ impl App {
             ("tql", tql.as_str()),
             ("resultStart", "0"),
             ("resultLimit", "100"), // We might need pagination later, but 100 is ok for MVP
-            ("sorting", "dateAdded ASC")
+            ("sorting", "dateAdded ASC"),
+            ("fields", "tags,associatedGroups,associatedIndicators")
         ];
 
         match self.client.get::<crate::models::search::SearchResponse>("/indicators", Some(&params)).await {
@@ -397,6 +398,46 @@ fn ui(f: &mut Frame, app: &mut App) {
                 if !desc.is_empty() {
                     content.push(Line::from(Span::styled("Description:", Style::default().add_modifier(Modifier::UNDERLINED))));
                     content.push(Line::from(desc.clone()));
+                }
+            }
+
+            // Tags
+            if !indicator.tags.is_empty() {
+                // Empty line break between description (or previous field) and tags
+                content.push(Line::from(""));
+
+                let tags_str: String = indicator.tags.iter()
+                    .map(|t| t.name.clone())
+                    .collect::<Vec<String>>()
+                    .join(" | ");
+
+                content.push(Line::from(vec![
+                    Span::styled("Tags: ", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD)),
+                    Span::raw(tags_str),
+                ]));
+            }
+
+            // Associated Groups
+            if !indicator.associated_groups.is_empty() {
+                content.push(Line::from(Span::styled("Associated Groups:", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD))));
+                for group in &indicator.associated_groups {
+                    let name = group.name.clone().or(group.summary.clone()).unwrap_or_else(|| "Unknown".to_string());
+                    content.push(Line::from(vec![
+                        Span::raw("  • "),
+                        Span::raw(name),
+                    ]));
+                }
+            }
+
+            // Associated Indicators
+            if !indicator.associated_indicators.is_empty() {
+                content.push(Line::from(Span::styled("Associated Indicators:", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD))));
+                for assoc_ind in &indicator.associated_indicators {
+                    let name = assoc_ind.summary.clone().or(assoc_ind.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+                    content.push(Line::from(vec![
+                        Span::raw("  • "),
+                        Span::raw(name),
+                    ]));
                 }
             }
         }

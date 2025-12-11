@@ -2,7 +2,7 @@
 mod tests {
     use super::super::aggregation::{group_indicators, calculate_stats};
     use crate::models::indicator::Indicator;
-    use crate::models::common::Tag;
+    use crate::models::common::{Tag, ListResponse};
     use chrono::Utc;
 
     fn create_mock_indicator(
@@ -30,10 +30,10 @@ mod tests {
             false_positive_flag: false_positive,
             false_positives: if false_positive { 1 } else { 0 },
             observations: 0,
-            tags: vec![],
-            attributes: vec![],
-            associated_groups: vec![],
-            associated_indicators: vec![],
+            tags: ListResponse::default(),
+            attributes: ListResponse::default(),
+            associated_groups: ListResponse::default(),
+            associated_indicators: ListResponse::default(),
         }
     }
 
@@ -68,7 +68,7 @@ mod tests {
 
         // Add a tag-based false positive
         let mut i4 = create_mock_indicator("D", "O2", 0.0, 50, true, false);
-        i4.tags.push(Tag { name: "False Positive".to_string(), description: None });
+        i4.tags.data.push(Tag { name: "False Positive".to_string(), description: None });
 
         let indicators = vec![i1, i2, i3, i4];
         let stats = calculate_stats(&indicators);
