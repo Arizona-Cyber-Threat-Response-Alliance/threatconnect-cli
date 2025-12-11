@@ -1,0 +1,11 @@
+{
+  "name": "threatconnect-tui",
+  "version": "0.1.0",
+  "description": "A TUI for ThreatConnect, written in Rust.",
+  "scripts": {
+    "start": "cd tc-tui-rs && cargo run",
+    "test": "cd tc-tui-rs && cargo test"
+  },
+  "author": "",
+  "license": "ISC"
+}
