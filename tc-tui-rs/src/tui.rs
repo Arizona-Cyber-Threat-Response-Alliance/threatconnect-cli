@@ -119,24 +119,74 @@ impl App {
 
         self.status_message = format!("Searching for '{}'...", self.input);
 
-        // Construct TQL query for summary
-        let tql = format!("summary contains \"{}\"", self.input);
-        let params = [
+        // Step 1: Initial search to get IDs (Fuzzy match, NO fields)
+        // usage of LIKE with wildcards ensures fuzzy matching works reliably
+        let tql = format!("summary like \"%{}%\"", self.input);
+        let params = vec![
             ("tql", tql.as_str()),
             ("resultStart", "0"),
             ("resultLimit", "100"), // We might need pagination later, but 100 is ok for MVP
             ("sorting", "dateAdded ASC"),
-            ("fields", "tags,associatedGroups,associatedIndicators")
         ];
 
         match self.client.get::<crate::models::search::SearchResponse>("/indicators", Some(&params)).await {
             Ok(response) => {
-                let indicators = response.data;
-                self.stats = calculate_stats(&indicators);
-                self.grouped_results = group_indicators(indicators);
+                if response.data.is_empty() {
+                    self.status_message = format!("No results found for '{}'.", self.input);
+                    self.grouped_results.clear();
+                    self.stats = SearchStats::default();
+                    self.selected_index = 0;
+                    self.scroll_offset = 0;
+                    return;
+                }
+
+                // Step 2: Fetch details for found IDs in parallel chunks
+                // We limit to 100 IDs total (from Step 1 limit)
+                let basic_indicators = response.data;
+                let chunk_size = 20;
+                let chunks: Vec<Vec<crate::models::indicator::Indicator>> = basic_indicators
+                    .chunks(chunk_size)
+                    .map(|chunk| chunk.to_vec())
+                    .collect();
+
+                self.status_message = format!("Fetching details for {} indicators ({} chunks)...", basic_indicators.len(), chunks.len());
+
+                let mut handles = Vec::new();
+
+                for chunk in chunks {
+                    let client = self.client.clone();
+                    handles.push(tokio::spawn(async move {
+                        let ids: Vec<String> = chunk.iter().map(|i| i.id.to_string()).collect();
+                        let id_list = ids.join(",");
+                        let tql_ids = format!("id in ({})", id_list);
+
+                        let params_details = vec![
+                            ("tql", tql_ids.as_str()),
+                            ("resultLimit", "100"), // ample for the chunk size
+                            ("sorting", "dateAdded ASC"), 
+                            ("fields", "tags"),
+                            ("fields", "associatedGroups"),
+                            ("fields", "associatedIndicators"),
+                        ];
+
+                        match client.get::<crate::models::search::SearchResponse>("/indicators", Some(&params_details)).await {
+                            Ok(detailed_res) => detailed_res.data,
+                            Err(_) => chunk, // Fallback to basic indicators on error
+                        }
+                    }));
+                }
+
+                let mut final_indicators = Vec::new();
+                for handle in handles {
+                    if let Ok(indicators) = handle.await {
+                        final_indicators.extend(indicators);
+                    }
+                }
+
+                self.stats = calculate_stats(&final_indicators);
+                self.grouped_results = group_indicators(final_indicators);
                 self.selected_index = 0;
                 self.scroll_offset = 0;
-
                 self.status_message = format!("Found {} indicators in {} groups.", self.stats.total_count, self.grouped_results.len());
             }
             Err(e) => {
