@@ -1,86 +1,80 @@
-**⚠️ NOTICE: This project is likely to become inactive as community members are now leveraging a paid or community-licensed free edition of [Polarity.io](https://polarity.io) for similar functionality.**
+# ThreatConnect TUI
 
-# ThreatConnect Indicator Query Tool
+![ThreatConnect TUI](new_tui_tc.png)
 
-This Python script allows users to interactively search ThreatConnect for indicator content based on various types of indicators such as IP addresses, hostnames, email addresses, and more. It utilizes the ThreatConnect API to retrieve and display information about indicators in a user-friendly format.
+A modern, terminal-based user interface for interacting with the ThreatConnect Platform. This tool provides a keyboard-centric, efficient way to search indicators, view details, and manage your ThreatConnect data directly from your terminal.
 
 ## Features
 
-- **Interactive Search**: Allows users to input indicators directly or via a file for querying ThreatConnect.
-- **Support for Multiple Indicator Types**: Search by IP addresses, hostnames, email addresses, URLs, and more.
-- **Colorized Output**: Displays search results in a visually appealing, colorized format for easy reading.
-- **Flexible Input**: Accepts multiple indicators separated by space, line, or comma.
+*   **Fast & Efficient**: Built in Rust for performance and low resource usage.
+*   **Keyboard Navigation**: Vim-like keybindings for rapid interaction.
+*   **Detailed Views**: Inspect indicators, attributes, tags, and associations.
+*   **Search**: Powerful search capabilities to find what you need quickly.
 
 ## Prerequisites
 
-Before you begin, ensure you have met the following requirements:
-
-- Python 3.6 or higher installed on your system.
-- Access to a ThreatConnect instance with API access enabled.
-- Your ThreatConnect API Access ID and Secret Key.
+*   **Rust**: You need to have Rust and Cargo installed. You can install them via [rustup](https://rustup.rs/).
+*   **ThreatConnect API Credentials**: You need an API Access ID and Secret Key from your ThreatConnect instance.
 
 ## Installation
 
-1. **Clone the Repository**
+1.  **Clone the repository:**
 
-   Clone this repository to your local machine using:
+    ```bash
+    git clone https://github.com/Arizona-Cyber-Threat-Response-Alliance/threatconnect-tui.git
+    cd threatconnect-tui
+    ```
 
-   ```sh
-   git clone https://github.com/Arizona-Cyber-Threat-Response-Alliance/threatconnect-cli.git
-   ```
+2.  **Configure Credentials:**
 
-2. **Install Required Python Packages**
+    Copy the example environment file and add your credentials:
 
-   Navigate to the cloned directory and install the required Python packages using:
+    ```bash
+    cp .env.example .env
+    ```
 
-   ```sh
-   pip install -r requirements.txt
-   ```
+    Edit `.env` with your preferred editor and fill in your details:
 
-   Here's the content for `requirements.txt`:
-
-   ```
-   requests
-   colorama
-   ```
-
-3. **Set Environment Variables**
-
-   Set the following environment variables in your system:
-
-   - `tc_accessid`: Your ThreatConnect API Access ID.
-   - `tc_secretkey`: Your ThreatConnect API Secret Key.
-
-   For Unix/Linux/macOS:
-
-   ```sh
-   export tc_accessid='your_access_id_here'
-   export tc_secretkey='your_secret_key_here'
-   ```
-
-   For Windows:
-
-   ```cmd
-   set tc_accessid=your_access_id_here
-   set tc_secretkey=your_secret_key_here
-   ```
+    ```env
+    TC_ACCESS_ID=your_access_id
+    TC_SECRET_KEY=your_secret_key
+    TC_INSTANCE=your_instance_url (e.g., https://api.threatconnect.com)
+    ```
 
 ## Usage
 
-To use the ThreatConnect Indicator Query Tool, follow these steps:
+### Using Cargo (Recommended)
 
-1. **Run the Script**
+To run the application directly with Cargo:
 
-   Navigate to the directory where the script is located and run:
+```bash
+cargo run
+```
 
-   ```sh
-   python3 tc-indicator.py
-   ```
+### Using NPM
 
-2. **Enter Indicators**
+If you prefer using NPM scripts (e.g., in a mixed environment), we provide a wrapper:
 
-   When prompted, enter the indicators you wish to search for. You can separate multiple indicators using space, line, or comma.
+```bash
+npm install
+npm start
+```
 
-3. **View Results**
+## Keybindings
 
-   The script will query ThreatConnect for the entered indicators and display the results in a colorized format. Each indicator's details will be shown, including type, date added, last modified, rating, confidence, and more.
+*   **Navigation**: `h`, `j`, `k`, `l` (Left, Down, Up, Right) or Arrow Keys.
+*   **Select/Enter**: `Enter`.
+*   **Back/Escape**: `Esc`.
+*   **Quit**: `q` or `Ctrl+c`.
+*   **Theme Toggle**: `t`.
+
+## Development
+
+The project is structured as a standard Rust binary crate.
+
+*   **Run Tests**: `cargo test`
+*   **Build Release**: `cargo build --release`
+
+## Legacy Python Tool
+
+The previous Python-based CLI tool has been moved to the `legacy/` directory.
