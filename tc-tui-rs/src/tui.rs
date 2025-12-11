@@ -212,10 +212,11 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
 fn ui(f: &mut Frame, app: &mut App) {
     // Colors
     const TC_ORANGE: Color = Color::Rgb(255, 122, 79);
-    // const TC_DARK_TEAL: Color = Color::Rgb(0, 27, 36); // Unused for now
-    // const TC_DEEP_BLUE: Color = Color::Rgb(0, 52, 69);
-    // const TC_STATUS_GREEN: Color = Color::Rgb(52, 191, 73);
-    // const TC_STATUS_RED: Color = Color::Rgb(255, 76, 76);
+    const TC_VERY_DARK_ORANGE: Color = Color::Rgb(163, 76, 0);   // #a34c00
+    const TC_DARK_ORANGE: Color = Color::Rgb(254, 124, 80);      // #fe7c50 (Using user's "dark orange" name, though sim to TC_ORANGE)
+    const TC_LIGHT_ORANGE: Color = Color::Rgb(250, 198, 148);    // #fac694
+    const TC_LIGHT_BLUE: Color = Color::Rgb(179, 209, 247);      // #b3d1f7
+    const TC_DARK_BLUE: Color = Color::Rgb(51, 93, 127);         // #335d7f
     const TC_WHITE: Color = Color::White;
 
     let chunks = Layout::default()
@@ -319,11 +320,11 @@ fn ui(f: &mut Frame, app: &mut App) {
 
         // Header info for the group
         content.push(Line::from(vec![
-            Span::styled("Summary: ", Style::default().fg(TC_ORANGE).add_modifier(Modifier::BOLD)),
+            Span::styled("Summary: ", Style::default().fg(TC_DARK_ORANGE).add_modifier(Modifier::BOLD)),
             Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(TC_WHITE)),
         ]));
         content.push(Line::from(vec![
-            Span::styled("Type: ", Style::default().fg(TC_ORANGE).add_modifier(Modifier::BOLD)),
+            Span::styled("Type: ", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD)),
             Span::raw(group.indicator_type.clone()),
         ]));
         // Removed empty line before divider
@@ -350,7 +351,7 @@ fn ui(f: &mut Frame, app: &mut App) {
 
             // Line 1
             content.push(Line::from(vec![
-                Span::styled("Owner: ", Style::default().fg(TC_ORANGE).add_modifier(Modifier::BOLD)),
+                Span::styled("Owner: ", Style::default().fg(TC_DARK_BLUE).add_modifier(Modifier::BOLD)),
                 Span::raw(indicator.owner_name.clone()),
                 Span::raw(" | "),
                 Span::styled("Active: ", Style::default().fg(TC_ORANGE).add_modifier(Modifier::BOLD)),
@@ -359,16 +360,16 @@ fn ui(f: &mut Frame, app: &mut App) {
 
             // Line 2
             content.push(Line::from(vec![
-                Span::styled("Added: ", Style::default().fg(TC_ORANGE)),
+                Span::styled("Added: ", Style::default().fg(TC_LIGHT_BLUE)),
                 Span::raw(indicator.date_added.format("%Y-%m-%d %H:%M").to_string()),
                 Span::raw(" | "),
-                Span::styled("Modified: ", Style::default().fg(TC_ORANGE)),
+                Span::styled("Modified: ", Style::default().fg(TC_LIGHT_BLUE)),
                 Span::raw(indicator.last_modified.format("%Y-%m-%d %H:%M").to_string()),
             ]));
 
             // Line 3: Evilness
             content.push(Line::from(vec![
-                Span::styled("Evilness: ", Style::default().fg(TC_ORANGE)),
+                Span::styled("Evilness: ", Style::default().fg(TC_VERY_DARK_ORANGE)),
                 Span::raw(format!("{} ({:.1})", rating_skulls, indicator.rating)),
             ]));
 
