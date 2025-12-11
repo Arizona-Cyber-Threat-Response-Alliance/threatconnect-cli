@@ -12,7 +12,9 @@ pub struct GroupedIndicator {
 #[derive(Debug, Clone, Default)]
 pub struct SearchStats {
     pub total_count: usize,
+    #[allow(dead_code)]
     pub earliest_created: Option<DateTime<Utc>>,
+    #[allow(dead_code)]
     pub latest_modified: Option<DateTime<Utc>>,
     pub avg_rating: Option<f32>,
     pub avg_confidence: Option<f32>,
