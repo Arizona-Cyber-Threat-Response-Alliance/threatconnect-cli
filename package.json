@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "description": "A TUI for ThreatConnect, written in Rust.",
   "scripts": {
-    "start": "cd tc-tui-rs && cargo run",
-    "test": "cd tc-tui-rs && cargo test"
+    "start": "cargo run",
+    "test": "cargo test"
   },
   "author": "",
   "license": "ISC"

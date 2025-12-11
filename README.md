@@ -48,7 +48,6 @@ A modern, terminal-based user interface for interacting with the ThreatConnect P
 To run the application directly with Cargo:
 
 ```bash
-cd tc-tui-rs
 cargo run
 ```
 
@@ -71,10 +70,10 @@ npm start
 
 ## Development
 
-The project is structured as a standard Rust binary crate located in `tc-tui-rs/`.
+The project is structured as a standard Rust binary crate.
 
-*   **Run Tests**: `cargo test` (inside `tc-tui-rs/`)
-*   **Build Release**: `cargo build --release` (inside `tc-tui-rs/`)
+*   **Run Tests**: `cargo test`
+*   **Build Release**: `cargo build --release`
 
 ## Legacy Python Tool
 
