@@ -8,7 +8,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Alignment},
     style::{Color, Style, Modifier},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Padding},
+    widgets::{Block, Borders, Paragraph, Padding, BorderType},
     Frame, Terminal,
 };
 use std::{error::Error, io, sync::Arc};
@@ -243,11 +243,12 @@ fn ui(f: &mut Frame, app: &mut App) {
         InputMode::Editing => Style::default().fg(TC_ORANGE),
     };
 
-    let input = Paragraph::new(app.input.as_str())
+    let input = Paragraph::new(format!("> {}", app.input.as_str()))
         .style(input_style)
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title("Search Indicators")
                 .border_style(Style::default().fg(TC_ORANGE))
                 .padding(Padding::horizontal(4)),
@@ -294,6 +295,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     let carousel_area = chunks[1];
     let block = Block::default()
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .title("Indicator Results")
         .border_style(Style::default().fg(TC_ORANGE))
         .padding(Padding::new(4, 4, 1, 0)); // Top padding 1
@@ -311,6 +313,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         let card_title = format!(" Item {} of {} ", current_index, total);
         let card_block = Block::default()
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .title(card_title)
             .border_style(Style::default().fg(TC_ORANGE))
             .padding(Padding::new(4, 4, 1, 0)); // Top padding 1
@@ -425,6 +428,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .block(
             Block::default()
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .title("Navigation")
                 .border_style(Style::default().fg(TC_ORANGE))
                 .padding(Padding::horizontal(4)),
@@ -433,9 +437,9 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Set cursor
     if let InputMode::Editing = app.input_mode {
-        // x = rect.x + border(1) + padding(4) + input_len
+        // x = rect.x + border(1) + padding(4) + "> " (2) + input_len
         f.set_cursor_position(ratatui::layout::Position::new(
-            header_chunks[0].x + 1 + 4 + app.input.len() as u16,
+            header_chunks[0].x + 1 + 4 + 2 + app.input.len() as u16,
             header_chunks[0].y + 1,
         ))
     }
