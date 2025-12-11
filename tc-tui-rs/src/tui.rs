@@ -16,6 +16,70 @@ use tokio::sync::Mutex;
 use crate::api::ThreatConnectClient;
 use crate::logic::aggregation::{GroupedIndicator, SearchStats, group_indicators, calculate_stats};
 
+#[derive(Clone, Copy)]
+pub enum ThemeVariant {
+    ThreatConnect,
+    ColorPop,
+}
+
+#[derive(Clone)]
+pub struct AppTheme {
+    pub variant: ThemeVariant,
+    pub border: Color,
+    pub text: Color,
+    pub input_edit: Color,
+    pub title_main: Color,     // Stats headers, Input border
+    pub title_secondary: Color,// Type, Tags, Assoc
+    pub summary_highlight: Color, // Summary
+    pub owner_label: Color,
+    pub date_label: Color,
+    pub active_label: Color,
+    pub evilness_label: Color,
+    pub confidence_filled: Color,
+    pub confidence_empty: Color,
+    pub separator: Color,
+}
+
+impl AppTheme {
+    pub fn default_theme() -> Self {
+        Self {
+            variant: ThemeVariant::ThreatConnect,
+            border: Color::Rgb(255, 122, 79),         // TC_ORANGE
+            text: Color::White,                       // TC_WHITE
+            input_edit: Color::Rgb(255, 122, 79),     // TC_ORANGE
+            title_main: Color::Rgb(255, 122, 79),     // TC_ORANGE
+            title_secondary: Color::Rgb(250, 198, 148), // TC_LIGHT_ORANGE
+            summary_highlight: Color::Rgb(254, 124, 80), // TC_DARK_ORANGE
+            owner_label: Color::Rgb(51, 93, 127),     // TC_DARK_BLUE
+            date_label: Color::Rgb(179, 209, 247),    // TC_LIGHT_BLUE
+            active_label: Color::Rgb(255, 122, 79),   // TC_ORANGE
+            evilness_label: Color::Rgb(163, 76, 0),   // TC_VERY_DARK_ORANGE
+            confidence_filled: Color::Rgb(255, 122, 79), // TC_ORANGE
+            confidence_empty: Color::White,           // TC_WHITE
+            separator: Color::DarkGray,
+        }
+    }
+
+    pub fn color_pop() -> Self {
+        Self {
+            variant: ThemeVariant::ColorPop,
+            border: Color::Rgb(0, 191, 255),          // popBorder (#00bfff)
+            text: Color::Rgb(255, 255, 255),          // popText (#FFFFFF)
+            input_edit: Color::Rgb(255, 20, 147),     // popPrimary (#FF1493)
+            title_main: Color::Rgb(255, 20, 147),     // popPrimary (#FF1493)
+            title_secondary: Color::Rgb(0, 191, 255), // popAccent (#00BFFF)
+            summary_highlight: Color::Rgb(255, 20, 147), // popKeyword (#FF1493)
+            owner_label: Color::Rgb(0, 191, 255),     // popInfo (#00BFFF)
+            date_label: Color::Rgb(129, 124, 121),    // popTextMuted (#817c79)
+            active_label: Color::Rgb(0, 255, 0),      // popSuccess (#00FF00)
+            evilness_label: Color::Rgb(255, 0, 0),    // popError (#FF0000)
+            confidence_filled: Color::Rgb(255, 255, 0), // popWarning (#FFFF00)
+            confidence_empty: Color::Rgb(129, 124, 121), // popTextMuted (#817c79)
+            separator: Color::Rgb(136, 136, 136),     // popComment (#888888)
+        }
+    }
+}
+
 enum InputMode {
     Normal,
     Editing,
@@ -30,6 +94,7 @@ pub struct App {
     stats: SearchStats,
     client: Arc<ThreatConnectClient>,
     status_message: String,
+    pub theme: AppTheme,
 }
 
 impl App {
@@ -42,7 +107,8 @@ impl App {
             scroll_offset: 0,
             stats: SearchStats::default(),
             client,
-            status_message: String::from("Press 'q' to quit, 'e' to enter search mode."),
+            status_message: String::from("Press 'q' to quit, 'e' to enter search mode, 't' to toggle theme."),
+            theme: AppTheme::default_theme(),
         }
     }
 
@@ -118,6 +184,13 @@ impl App {
             self.scroll_offset = self.scroll_offset.saturating_sub(1);
         }
     }
+
+    fn toggle_theme(&mut self) {
+        self.theme = match self.theme.variant {
+            ThemeVariant::ThreatConnect => AppTheme::color_pop(),
+            ThemeVariant::ColorPop => AppTheme::default_theme(),
+        };
+    }
 }
 
 pub async fn run_app() -> Result<(), Box<dyn Error>> {
@@ -168,19 +241,23 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
                             app_guard.input_mode = InputMode::Editing;
                             app_guard.status_message = String::from("Editing... Press Enter to search, Esc to cancel.");
                         }
+                        KeyCode::Char('t') => {
+                            app_guard.toggle_theme();
+                        }
                         KeyCode::Char('q') => {
                             return Ok(());
                         }
-                        KeyCode::Right => {
+                        // Navigation
+                        KeyCode::Right | KeyCode::Char('l') => {
                             app_guard.next();
                         }
-                        KeyCode::Left => {
+                        KeyCode::Left | KeyCode::Char('h') => {
                             app_guard.previous();
                         }
-                        KeyCode::Down => {
+                        KeyCode::Down | KeyCode::Char('j') => {
                             app_guard.scroll_down();
                         }
-                        KeyCode::Up => {
+                        KeyCode::Up | KeyCode::Char('k') => {
                             app_guard.scroll_up();
                         }
                         _ => {}
@@ -211,15 +288,6 @@ async fn run_loop<B: Backend>(terminal: &mut Terminal<B>, app: Arc<Mutex<App>>) 
 }
 
 fn ui(f: &mut Frame, app: &mut App) {
-    // Colors
-    const TC_ORANGE: Color = Color::Rgb(255, 122, 79);
-    const TC_VERY_DARK_ORANGE: Color = Color::Rgb(163, 76, 0);   // #a34c00
-    const TC_DARK_ORANGE: Color = Color::Rgb(254, 124, 80);      // #fe7c50 (Using user's "dark orange" name, though sim to TC_ORANGE)
-    const TC_LIGHT_ORANGE: Color = Color::Rgb(250, 198, 148);    // #fac694
-    const TC_LIGHT_BLUE: Color = Color::Rgb(179, 209, 247);      // #b3d1f7
-    const TC_DARK_BLUE: Color = Color::Rgb(51, 93, 127);         // #335d7f
-    const TC_WHITE: Color = Color::White;
-
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -240,8 +308,8 @@ fn ui(f: &mut Frame, app: &mut App) {
         .split(chunks[0]);
 
     let input_style = match app.input_mode {
-        InputMode::Normal => Style::default().fg(TC_WHITE),
-        InputMode::Editing => Style::default().fg(TC_ORANGE),
+        InputMode::Normal => Style::default().fg(app.theme.text),
+        InputMode::Editing => Style::default().fg(app.theme.input_edit),
     };
 
     let input = Paragraph::new(format!("> {}", app.input.as_str()))
@@ -251,7 +319,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .title("Search Indicators")
-                .border_style(Style::default().fg(TC_ORANGE))
+                .border_style(Style::default().fg(app.theme.title_main))
                 .padding(Padding::horizontal(4)),
         );
     f.render_widget(input, header_chunks[0]);
@@ -262,19 +330,19 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     let stats_text = vec![
         Line::from(vec![
-            Span::styled("Count: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
+            Span::styled("Count: ", Style::default().add_modifier(Modifier::BOLD).fg(app.theme.title_main)),
             Span::raw(format!("{}   ", app.stats.total_count)),
-            Span::styled("Owners: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
+            Span::styled("Owners: ", Style::default().add_modifier(Modifier::BOLD).fg(app.theme.title_main)),
             Span::raw(format!("{}   ", app.stats.unique_owners)),
-            Span::styled("Avg Evilness: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
+            Span::styled("Avg Evilness: ", Style::default().add_modifier(Modifier::BOLD).fg(app.theme.title_main)),
             Span::raw(format!("{}   ", avg_rating)),
-            Span::styled("Avg Conf: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
+            Span::styled("Avg Conf: ", Style::default().add_modifier(Modifier::BOLD).fg(app.theme.title_main)),
             Span::raw(format!("{}", avg_conf)),
         ]),
         Line::from(vec![
-            Span::styled("Active: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
+            Span::styled("Active: ", Style::default().add_modifier(Modifier::BOLD).fg(app.theme.title_main)),
             Span::raw(format!("{}   ", app.stats.active_count)),
-            Span::styled("False Positives: ", Style::default().add_modifier(Modifier::BOLD).fg(TC_ORANGE)),
+            Span::styled("False Positives: ", Style::default().add_modifier(Modifier::BOLD).fg(app.theme.title_main)),
             Span::raw(format!("{}   ", app.stats.false_positives)),
         ]),
     ];
@@ -284,10 +352,10 @@ fn ui(f: &mut Frame, app: &mut App) {
             Block::default()
                 .borders(Borders::TOP)
                 .title("Search Stats")
-                .border_style(Style::default().fg(TC_ORANGE))
+                .border_style(Style::default().fg(app.theme.title_main))
                 .padding(Padding::horizontal(4)),
         )
-        .style(Style::default().fg(TC_WHITE));
+        .style(Style::default().fg(app.theme.text));
 
     f.render_widget(stats_paragraph, header_chunks[1]);
 
@@ -298,12 +366,13 @@ fn ui(f: &mut Frame, app: &mut App) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title("Indicator Results")
-        .border_style(Style::default().fg(TC_ORANGE))
+        .border_style(Style::default().fg(app.theme.border))
         .padding(Padding::new(4, 4, 1, 0)); // Top padding 1
 
     if app.grouped_results.is_empty() {
         let text = Paragraph::new("No results found. Press 'e' to search.")
             .alignment(Alignment::Center)
+            .style(Style::default().fg(app.theme.text))
             .block(block);
         f.render_widget(text, carousel_area);
     } else {
@@ -316,7 +385,7 @@ fn ui(f: &mut Frame, app: &mut App) {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .title(card_title)
-            .border_style(Style::default().fg(TC_ORANGE))
+            .border_style(Style::default().fg(app.theme.border))
             .padding(Padding::new(4, 4, 1, 0)); // Top padding 1
 
         // Content of the card
@@ -324,22 +393,22 @@ fn ui(f: &mut Frame, app: &mut App) {
 
         // Header info for the group
         content.push(Line::from(vec![
-            Span::styled("Summary: ", Style::default().fg(TC_DARK_ORANGE).add_modifier(Modifier::BOLD)),
-            Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(TC_WHITE)),
+            Span::styled("Summary: ", Style::default().fg(app.theme.summary_highlight).add_modifier(Modifier::BOLD)),
+            Span::styled(group.summary.clone(), Style::default().add_modifier(Modifier::BOLD).fg(app.theme.text)),
         ]));
         content.push(Line::from(vec![
-            Span::styled("Type: ", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD)),
-            Span::raw(group.indicator_type.clone()),
+            Span::styled("Type: ", Style::default().fg(app.theme.title_secondary).add_modifier(Modifier::BOLD)),
+            Span::styled(group.indicator_type.clone(), Style::default().fg(app.theme.text)),
         ]));
         // Removed empty line before divider
         let divider_len = carousel_area.width.saturating_sub(10) as usize; // width - borders(2) - padding(8)
-        content.push(Line::from(Span::raw("─".repeat(divider_len))));
+        content.push(Line::from(Span::styled("─".repeat(divider_len), Style::default().fg(app.theme.text))));
 
         // List all indicators
         for (idx, indicator) in group.indicators.iter().enumerate() {
             if idx > 0 {
                 content.push(Line::from(""));
-                content.push(Line::from(Span::styled("- - - - -", Style::default().fg(Color::DarkGray))));
+                content.push(Line::from(Span::styled("- - - - -", Style::default().fg(app.theme.separator))));
                 content.push(Line::from(""));
             } else {
                 content.push(Line::from(""));
@@ -355,26 +424,26 @@ fn ui(f: &mut Frame, app: &mut App) {
 
             // Line 1
             content.push(Line::from(vec![
-                Span::styled("Owner: ", Style::default().fg(TC_DARK_BLUE).add_modifier(Modifier::BOLD)),
-                Span::raw(indicator.owner_name.clone()),
-                Span::raw(" | "),
-                Span::styled("Active: ", Style::default().fg(TC_ORANGE).add_modifier(Modifier::BOLD)),
-                Span::raw(if indicator.active { "Yes" } else { "No" }),
+                Span::styled("Owner: ", Style::default().fg(app.theme.owner_label).add_modifier(Modifier::BOLD)),
+                Span::styled(indicator.owner_name.clone(), Style::default().fg(app.theme.text)),
+                Span::styled(" | ", Style::default().fg(app.theme.text)),
+                Span::styled("Active: ", Style::default().fg(app.theme.active_label).add_modifier(Modifier::BOLD)),
+                Span::styled(if indicator.active { "Yes" } else { "No" }, Style::default().fg(app.theme.text)),
             ]));
 
             // Line 2
             content.push(Line::from(vec![
-                Span::styled("Added: ", Style::default().fg(TC_LIGHT_BLUE)),
-                Span::raw(indicator.date_added.format("%Y-%m-%d %H:%M").to_string()),
-                Span::raw(" | "),
-                Span::styled("Modified: ", Style::default().fg(TC_LIGHT_BLUE)),
-                Span::raw(indicator.last_modified.format("%Y-%m-%d %H:%M").to_string()),
+                Span::styled("Added: ", Style::default().fg(app.theme.date_label)),
+                Span::styled(indicator.date_added.format("%Y-%m-%d %H:%M").to_string(), Style::default().fg(app.theme.text)),
+                Span::styled(" | ", Style::default().fg(app.theme.text)),
+                Span::styled("Modified: ", Style::default().fg(app.theme.date_label)),
+                Span::styled(indicator.last_modified.format("%Y-%m-%d %H:%M").to_string(), Style::default().fg(app.theme.text)),
             ]));
 
             // Line 3: Evilness
             content.push(Line::from(vec![
-                Span::styled("Evilness: ", Style::default().fg(TC_VERY_DARK_ORANGE)),
-                Span::raw(format!("{} ({:.1})", rating_skulls, indicator.rating)),
+                Span::styled("Evilness: ", Style::default().fg(app.theme.evilness_label)),
+                Span::styled(format!("{} ({:.1})", rating_skulls, indicator.rating), Style::default().fg(app.theme.text)),
             ]));
 
             // Line 4: Confidence Bar
@@ -387,17 +456,17 @@ fn ui(f: &mut Frame, app: &mut App) {
             let empty_bar = "-".repeat(empty_count);
 
             content.push(Line::from(vec![
-                Span::styled("Confidence: ", Style::default().fg(TC_ORANGE)),
-                Span::raw(format!("{}% [", conf_val)),
-                Span::styled(filled_bar, Style::default().fg(TC_ORANGE)),
-                Span::styled(empty_bar, Style::default().fg(TC_WHITE)),
-                Span::raw("]"),
+                Span::styled("Confidence: ", Style::default().fg(app.theme.title_main)),
+                Span::styled(format!("{}% [", conf_val), Style::default().fg(app.theme.text)),
+                Span::styled(filled_bar, Style::default().fg(app.theme.confidence_filled)),
+                Span::styled(empty_bar, Style::default().fg(app.theme.confidence_empty)),
+                Span::styled("]", Style::default().fg(app.theme.text)),
             ]));
 
             if let Some(desc) = &indicator.description {
                 if !desc.is_empty() {
-                    content.push(Line::from(Span::styled("Description:", Style::default().add_modifier(Modifier::UNDERLINED))));
-                    content.push(Line::from(desc.clone()));
+                    content.push(Line::from(Span::styled("Description:", Style::default().add_modifier(Modifier::UNDERLINED).fg(app.theme.text))));
+                    content.push(Line::from(Span::styled(desc.clone(), Style::default().fg(app.theme.text))));
                 }
             }
 
@@ -412,31 +481,31 @@ fn ui(f: &mut Frame, app: &mut App) {
                     .join(" | ");
 
                 content.push(Line::from(vec![
-                    Span::styled("Tags: ", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD)),
-                    Span::raw(tags_str),
+                    Span::styled("Tags: ", Style::default().fg(app.theme.title_secondary).add_modifier(Modifier::BOLD)),
+                    Span::styled(tags_str, Style::default().fg(app.theme.text)),
                 ]));
             }
 
             // Associated Groups
             if !indicator.associated_groups.is_empty() {
-                content.push(Line::from(Span::styled("Associated Groups:", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD))));
+                content.push(Line::from(Span::styled("Associated Groups:", Style::default().fg(app.theme.title_secondary).add_modifier(Modifier::BOLD))));
                 for group in &indicator.associated_groups {
                     let name = group.name.clone().or(group.summary.clone()).unwrap_or_else(|| "Unknown".to_string());
                     content.push(Line::from(vec![
-                        Span::raw("  • "),
-                        Span::raw(name),
+                        Span::styled("  • ", Style::default().fg(app.theme.text)),
+                        Span::styled(name, Style::default().fg(app.theme.text)),
                     ]));
                 }
             }
 
             // Associated Indicators
             if !indicator.associated_indicators.is_empty() {
-                content.push(Line::from(Span::styled("Associated Indicators:", Style::default().fg(TC_LIGHT_ORANGE).add_modifier(Modifier::BOLD))));
+                content.push(Line::from(Span::styled("Associated Indicators:", Style::default().fg(app.theme.title_secondary).add_modifier(Modifier::BOLD))));
                 for assoc_ind in &indicator.associated_indicators {
                     let name = assoc_ind.summary.clone().or(assoc_ind.name.clone()).unwrap_or_else(|| "Unknown".to_string());
                     content.push(Line::from(vec![
-                        Span::raw("  • "),
-                        Span::raw(name),
+                        Span::styled("  • ", Style::default().fg(app.theme.text)),
+                        Span::styled(name, Style::default().fg(app.theme.text)),
                     ]));
                 }
             }
@@ -454,16 +523,18 @@ fn ui(f: &mut Frame, app: &mut App) {
     // --- Footer ---
     let footer_text = vec![
         Line::from(vec![
-            Span::styled(" ←/→ ", Style::default().fg(TC_ORANGE)),
-            Span::raw("Next/Prev Group  |  "),
-            Span::styled(" ↑/↓ ", Style::default().fg(TC_ORANGE)),
-            Span::raw("Scroll  |  "),
-            Span::styled(" e ", Style::default().fg(TC_ORANGE)),
-            Span::raw("Search  |  "),
-            Span::styled(" q ", Style::default().fg(TC_ORANGE)),
-            Span::raw("Quit"),
+            Span::styled(" ←/→ ", Style::default().fg(app.theme.title_main)),
+            Span::styled("Next/Prev Group  |  ", Style::default().fg(app.theme.text)),
+            Span::styled(" ↑/↓ ", Style::default().fg(app.theme.title_main)),
+            Span::styled("Scroll  |  ", Style::default().fg(app.theme.text)),
+            Span::styled(" e ", Style::default().fg(app.theme.title_main)),
+            Span::styled("Search  |  ", Style::default().fg(app.theme.text)),
+            Span::styled(" q ", Style::default().fg(app.theme.title_main)),
+            Span::styled("Quit  |  ", Style::default().fg(app.theme.text)),
+            Span::styled(" t ", Style::default().fg(app.theme.title_main)),
+            Span::styled("Theme", Style::default().fg(app.theme.text)),
         ]),
-        Line::from(app.status_message.clone()),
+        Line::from(Span::styled(app.status_message.clone(), Style::default().fg(app.theme.text))),
     ];
     let footer = Paragraph::new(footer_text)
         .block(
@@ -471,7 +542,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .title("Navigation")
-                .border_style(Style::default().fg(TC_ORANGE))
+                .border_style(Style::default().fg(app.theme.border))
                 .padding(Padding::horizontal(4)),
         );
     f.render_widget(footer, chunks[2]);
